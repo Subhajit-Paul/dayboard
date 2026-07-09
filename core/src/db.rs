@@ -411,6 +411,28 @@ impl Db {
         rows.collect()
     }
 
+    /// All reminders regardless of fired/due status, joined with task title.
+    /// Mirrors `list_due_reminders` minus its due-date filter — the calendar
+    /// views need every reminder on its day, not just overdue ones.
+    pub fn list_all_reminders(&self) -> rusqlite::Result<Vec<(Reminder, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT r.id, r.task_id, r.remind_at, r.fired_at, t.title \
+             FROM reminders r JOIN tasks t ON t.id = r.task_id ORDER BY r.remind_at",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                Reminder {
+                    id: row.get(0)?,
+                    task_id: row.get(1)?,
+                    remind_at: row.get(2)?,
+                    fired_at: row.get(3)?,
+                },
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
     pub fn mark_reminder_fired(&self, id: i64) -> rusqlite::Result<()> {
         self.conn.execute(
             "UPDATE reminders SET fired_at = ?1 WHERE id = ?2",
@@ -490,5 +512,24 @@ mod tests {
         let updated = db.get_event(remote).unwrap().unwrap();
         assert_eq!(updated.title, "Planning v2");
         assert_eq!(updated.etag.as_deref(), Some("etag-2"));
+    }
+
+    #[test]
+    fn list_all_reminders_includes_fired_ones() {
+        let db = Db::open(":memory:").unwrap();
+        let task = db.create_task("Water plants", None).unwrap();
+        let fired = db.create_reminder(task, now() - 100).unwrap();
+        let pending = db.create_reminder(task, now() + 100).unwrap();
+        db.mark_reminder_fired(fired).unwrap();
+
+        // list_due_reminders excludes fired ones...
+        assert!(db.list_due_reminders(now()).unwrap().is_empty());
+
+        // ...but list_all_reminders returns both, ordered by remind_at.
+        let all = db.list_all_reminders().unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].0.id, fired);
+        assert_eq!(all[1].0.id, pending);
+        assert!(all.iter().all(|(_, title)| title == "Water plants"));
     }
 }

@@ -1,9 +1,10 @@
+mod calendar;
 mod theme;
 
 use std::collections::HashMap;
 
-use caldav_core::{Db, Event, Task};
-use chrono::{Local, NaiveDateTime, TimeZone};
+use caldav_core::{Db, Event, Reminder, Task};
+use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use iced::widget::{button, checkbox, column, container, row, rule, scrollable, text, text_input, Space};
 use iced::{Alignment, Element, Length, Task as IcedTask};
 
@@ -11,6 +12,7 @@ use iced::{Alignment, Element, Length, Task as IcedTask};
 enum View {
     Tasks,
     Events,
+    Calendar,
 }
 
 struct TaskRow {
@@ -76,12 +78,15 @@ struct App {
     view: View,
     rows: Vec<TaskRow>,
     events: Vec<Event>,
+    reminders: Vec<(Reminder, String)>,
     reminder_counts: HashMap<i64, i64>,
     input: String,
     adding_parent: Option<i64>,
     event_title: String,
     event_start: String,
     event_end: String,
+    cal_scale: calendar::CalendarScale,
+    cal_cursor: NaiveDate,
     status: String,
 }
 
@@ -94,12 +99,15 @@ impl App {
             view: View::Tasks,
             rows: Vec::new(),
             events: Vec::new(),
+            reminders: Vec::new(),
             reminder_counts: HashMap::new(),
             input: String::new(),
             adding_parent: None,
             event_title: String::new(),
             event_start: String::new(),
             event_end: String::new(),
+            cal_scale: calendar::CalendarScale::Month,
+            cal_cursor: Local::now().date_naive(),
             status: String::new(),
         };
         app.refresh();
@@ -111,6 +119,7 @@ impl App {
         self.reminder_counts = self.db.reminder_counts().unwrap_or_default();
         self.rows = build_tree(tasks);
         self.events = self.db.list_events().unwrap_or_default();
+        self.reminders = self.db.list_all_reminders().unwrap_or_default();
     }
 
     fn theme(&self) -> iced::Theme {
@@ -138,6 +147,11 @@ enum Message {
     SubmitEvent,
     DeleteEvent(i64),
     SystemThemeChanged(iced::theme::Mode),
+    CalScaleChanged(calendar::CalendarScale),
+    CalPrev,
+    CalNext,
+    CalToday,
+    SelectDay(NaiveDate),
 }
 
 fn update(app: &mut App, message: Message) {
@@ -205,6 +219,18 @@ fn update(app: &mut App, message: Message) {
             app.refresh();
         }
         Message::SystemThemeChanged(mode) => app.theme_mode = mode,
+        Message::CalScaleChanged(scale) => app.cal_scale = scale,
+        Message::CalPrev => app.cal_cursor = calendar::shift(app.cal_cursor, app.cal_scale, false),
+        Message::CalNext => app.cal_cursor = calendar::shift(app.cal_cursor, app.cal_scale, true),
+        Message::CalToday => app.cal_cursor = Local::now().date_naive(),
+        Message::SelectDay(day) => {
+            app.cal_cursor = day;
+            app.cal_scale = calendar::CalendarScale::Day;
+            let start = NaiveDateTime::new(day, NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+            let end = NaiveDateTime::new(day, NaiveTime::from_hms_opt(10, 0, 0).unwrap());
+            app.event_start = start.format("%Y-%m-%d %H:%M").to_string();
+            app.event_end = end.format("%Y-%m-%d %H:%M").to_string();
+        }
     }
 }
 
@@ -221,6 +247,7 @@ fn header_bar(app: &App) -> Element<'_, Message> {
         Space::new().width(Length::Fill),
         tab("Tasks", View::Tasks),
         tab("Events", View::Events),
+        tab("Calendar", View::Calendar),
         Space::new().width(Length::Fill),
         button(text("Sync").size(theme::SIZE_BODY))
             .style(button::primary)
@@ -417,6 +444,7 @@ fn view(app: &App) -> Element<'_, Message> {
     let body = match app.view {
         View::Tasks => tasks_view(app),
         View::Events => events_view(app),
+        View::Calendar => calendar::view(app),
     };
 
     column![header_bar(app), body].into()
