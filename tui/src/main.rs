@@ -346,7 +346,7 @@ fn draw(frame: &mut Frame, app: &App) {
                     };
                     let mut spans = vec![Span::styled(format!("{indent}{check}{}", row.task.title), style)];
                     if app.reminder_counts.get(&row.task.id).copied().unwrap_or(0) > 0 {
-                        spans.push(Span::styled(" \u{23F0}", Style::default().fg(WARNING)));
+                        spans.push(Span::styled(" (reminder)", Style::default().fg(WARNING)));
                     }
                     ListItem::new(Line::from(spans))
                 })

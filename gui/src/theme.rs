@@ -123,6 +123,12 @@ pub fn muted_text(theme: &Theme) -> iced::widget::text::Style {
     }
 }
 
+pub fn warning_text(theme: &Theme) -> iced::widget::text::Style {
+    iced::widget::text::Style {
+        color: Some(theme.extended_palette().warning.base.color),
+    }
+}
+
 pub fn checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::Style {
     checkbox::primary(theme, status)
 }

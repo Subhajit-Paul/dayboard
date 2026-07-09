@@ -237,11 +237,10 @@ fn header_bar(app: &App) -> Element<'_, Message> {
     .into()
 }
 
-fn empty_state<'a>(glyph: &'a str, title: &'a str, hint: &'a str) -> Element<'a, Message> {
+fn empty_state<'a>(title: &'a str, hint: &'a str) -> Element<'a, Message> {
     container(
         column![
-            text(glyph).size(40),
-            text(title).size(theme::SIZE_BODY),
+            text(title).size(theme::SIZE_TITLE),
             text(hint).size(theme::SIZE_META).style(theme::muted_text),
         ]
         .spacing(theme::XXS)
@@ -284,7 +283,7 @@ fn task_row<'a>(app: &'a App, r: &'a TaskRow) -> Element<'a, Message> {
     );
     content = content.push(title);
     if has_reminder {
-        content = content.push(text("\u{23F0}").size(theme::SIZE_META));
+        content = content.push(text("reminder").size(theme::SIZE_CAPTION).style(theme::warning_text));
     }
     content = content.push(Space::new().width(Length::Fill));
     content = content.push(
@@ -293,7 +292,7 @@ fn task_row<'a>(app: &'a App, r: &'a TaskRow) -> Element<'a, Message> {
             .on_press(Message::SetParent(task_id)),
     );
     content = content.push(
-        button(text("\u{2715}").size(theme::SIZE_META))
+        button(text("x").size(theme::SIZE_META))
             .style(theme::danger_ghost_button)
             .on_press(Message::DeleteTask(task_id)),
     );
@@ -351,7 +350,7 @@ fn task_composer(app: &App) -> Element<'_, Message> {
 
 fn tasks_view(app: &App) -> Element<'_, Message> {
     let list = if app.rows.is_empty() {
-        empty_state("\u{2713}", "No tasks yet", "Add one below to get started")
+        empty_state("No tasks yet", "Add one below to get started")
     } else {
         divided_list(app.rows.iter().map(|r| task_row(app, r)).collect())
     };
@@ -368,7 +367,7 @@ fn event_row(event: &Event) -> Element<'_, Message> {
         ]
         .spacing(theme::XXS),
         Space::new().width(Length::Fill),
-        button(text("\u{2715}").size(theme::SIZE_META))
+        button(text("x").size(theme::SIZE_META))
             .style(theme::danger_ghost_button)
             .on_press(Message::DeleteEvent(event_id)),
     ]
@@ -406,7 +405,7 @@ fn event_composer(app: &App) -> Element<'_, Message> {
 
 fn events_view(app: &App) -> Element<'_, Message> {
     let list = if app.events.is_empty() {
-        empty_state("\u{1F5D3}", "No events yet", "Add one below \u{2014} synced events will appear here too")
+        empty_state("No events yet", "Add one below \u{2014} synced events will appear here too")
     } else {
         divided_list(app.events.iter().map(event_row).collect())
     };
