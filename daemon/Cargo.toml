@@ -1,0 +1,8 @@
+[package]
+name = "daemon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+caldav_core = { version = "0.1.0", path = "../core" }
+notify-rust = "4.18.0"

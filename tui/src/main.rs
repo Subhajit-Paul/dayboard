@@ -1,0 +1,345 @@
+use std::collections::HashMap;
+use std::io;
+
+use caldav_core::{Db, Task};
+use chrono::{Local, NaiveDateTime, TimeZone};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::Frame;
+
+enum Purpose {
+    AddTask,
+    AddSubtask(i64),
+    EditTask(i64),
+    AddReminder(i64),
+    AddEvent,
+}
+
+enum Mode {
+    Normal,
+    Input { purpose: Purpose, buffer: String },
+    ConfirmDelete { task_id: i64, has_children: bool },
+}
+
+struct Row {
+    task: Task,
+    depth: usize,
+}
+
+struct App {
+    db: Db,
+    rows: Vec<Row>,
+    reminder_counts: HashMap<i64, i64>,
+    selected: usize,
+    mode: Mode,
+    status: String,
+}
+
+const HELP: &str =
+    "a add  s subtask  e edit  d delete  space toggle  r reminder  v event  g sync  q quit";
+
+impl App {
+    fn new(db: Db) -> Self {
+        let mut app = App {
+            db,
+            rows: Vec::new(),
+            reminder_counts: HashMap::new(),
+            selected: 0,
+            mode: Mode::Normal,
+            status: HELP.to_string(),
+        };
+        app.refresh();
+        app
+    }
+
+    fn refresh(&mut self) {
+        let tasks = self.db.list_tasks().unwrap_or_default();
+        self.reminder_counts = self.db.reminder_counts().unwrap_or_default();
+        self.rows = build_tree(tasks);
+        if self.selected >= self.rows.len() && !self.rows.is_empty() {
+            self.selected = self.rows.len() - 1;
+        }
+    }
+
+    fn selected_task_id(&self) -> Option<i64> {
+        self.rows.get(self.selected).map(|r| r.task.id)
+    }
+}
+
+fn build_tree(tasks: Vec<Task>) -> Vec<Row> {
+    let mut children: HashMap<i64, Vec<Task>> = HashMap::new();
+    let mut roots: Vec<Task> = Vec::new();
+    for t in tasks {
+        match t.parent_id {
+            Some(pid) => children.entry(pid).or_default().push(t),
+            None => roots.push(t),
+        }
+    }
+    let mut rows = Vec::new();
+    for root in roots {
+        let kids = children.remove(&root.id).unwrap_or_default();
+        rows.push(Row { task: root, depth: 0 });
+        for k in kids {
+            rows.push(Row { task: k, depth: 1 });
+        }
+    }
+    rows
+}
+
+fn parse_remind_at(input: &str) -> Option<i64> {
+    let input = input.trim();
+    if let Some(rest) = input.strip_prefix('+') {
+        let split = rest.len().checked_sub(1)?;
+        let (num, unit) = rest.split_at(split);
+        let n: i64 = num.parse().ok()?;
+        let secs = match unit {
+            "s" => n,
+            "m" => n * 60,
+            "h" => n * 3600,
+            "d" => n * 86400,
+            _ => return None,
+        };
+        return Some(caldav_core::db::now() + secs);
+    }
+    let ndt = NaiveDateTime::parse_from_str(input, "%Y-%m-%d %H:%M").ok()?;
+    Local.from_local_datetime(&ndt).single().map(|dt| dt.timestamp())
+}
+
+fn main() -> io::Result<()> {
+    let db = Db::open_default().expect("failed to open database");
+    let mut app = App::new(db);
+
+    let mut terminal = ratatui::init();
+    let result = run(&mut terminal, &mut app);
+    ratatui::restore();
+    result
+}
+
+fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Result<()> {
+    loop {
+        terminal.draw(|frame| draw(frame, app))?;
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            if handle_key(app, key.code) {
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// Returns true when the app should quit.
+fn handle_key(app: &mut App, code: KeyCode) -> bool {
+    let mode = std::mem::replace(&mut app.mode, Mode::Normal);
+    match mode {
+        Mode::Normal => return handle_normal_key(app, code),
+        Mode::Input { purpose, mut buffer } => match code {
+            KeyCode::Esc => app.mode = Mode::Normal,
+            KeyCode::Enter => submit_input(app, purpose, buffer),
+            KeyCode::Backspace => {
+                buffer.pop();
+                app.mode = Mode::Input { purpose, buffer };
+            }
+            KeyCode::Char(c) => {
+                buffer.push(c);
+                app.mode = Mode::Input { purpose, buffer };
+            }
+            _ => app.mode = Mode::Input { purpose, buffer },
+        },
+        Mode::ConfirmDelete { task_id, .. } => {
+            if code == KeyCode::Char('y') {
+                let _ = app.db.delete_task(task_id);
+                app.refresh();
+            }
+            app.mode = Mode::Normal;
+        }
+    }
+    false
+}
+
+fn handle_normal_key(app: &mut App, code: KeyCode) -> bool {
+    match code {
+        KeyCode::Char('q') => return true,
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.selected > 0 {
+                app.selected -= 1;
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.selected + 1 < app.rows.len() {
+                app.selected += 1;
+            }
+        }
+        KeyCode::Char('a') => {
+            app.mode = Mode::Input {
+                purpose: Purpose::AddTask,
+                buffer: String::new(),
+            };
+        }
+        KeyCode::Char('s') => match app.selected_task_id() {
+            Some(id) => {
+                app.mode = Mode::Input {
+                    purpose: Purpose::AddSubtask(id),
+                    buffer: String::new(),
+                }
+            }
+            None => app.status = "select a task first".into(),
+        },
+        KeyCode::Char('e') => {
+            if let Some(row) = app.rows.get(app.selected) {
+                app.mode = Mode::Input {
+                    purpose: Purpose::EditTask(row.task.id),
+                    buffer: row.task.title.clone(),
+                };
+            }
+        }
+        KeyCode::Char('d') => {
+            if let Some(id) = app.selected_task_id() {
+                let has_children = app.db.has_children(id).unwrap_or(false);
+                app.mode = Mode::ConfirmDelete {
+                    task_id: id,
+                    has_children,
+                };
+            }
+        }
+        KeyCode::Char(' ') | KeyCode::Enter => {
+            if let Some(id) = app.selected_task_id() {
+                let _ = app.db.toggle_done(id);
+                app.refresh();
+            }
+        }
+        KeyCode::Char('r') => match app.selected_task_id() {
+            Some(id) => {
+                app.mode = Mode::Input {
+                    purpose: Purpose::AddReminder(id),
+                    buffer: String::new(),
+                };
+                app.status = "reminder time: YYYY-MM-DD HH:MM or +30s / +5m / +1h".into();
+            }
+            None => app.status = "select a task first".into(),
+        },
+        KeyCode::Char('v') => {
+            app.mode = Mode::Input {
+                purpose: Purpose::AddEvent,
+                buffer: String::new(),
+            };
+            app.status = "event: Title | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM".into();
+        }
+        KeyCode::Char('g') => {
+            if !caldav_core::auth::is_authenticated() {
+                app.status = "not connected — run `caldavd --auth` in a terminal first".into();
+            } else {
+                app.status = "syncing...".into();
+                match caldav_core::sync::run(&app.db) {
+                    Ok(()) => {
+                        app.status = "sync complete".into();
+                        app.refresh();
+                    }
+                    Err(e) => app.status = format!("sync failed: {e}"),
+                }
+            }
+        }
+        _ => {}
+    }
+    false
+}
+
+fn submit_input(app: &mut App, purpose: Purpose, text: String) {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        app.mode = Mode::Normal;
+        return;
+    }
+    match purpose {
+        Purpose::AddTask => {
+            let _ = app.db.create_task(&text, None);
+        }
+        Purpose::AddSubtask(parent_id) => {
+            let _ = app.db.create_task(&text, Some(parent_id));
+        }
+        Purpose::EditTask(id) => {
+            let _ = app.db.update_task_title(id, &text);
+        }
+        Purpose::AddReminder(task_id) => match parse_remind_at(&text) {
+            Some(ts) => {
+                let _ = app.db.create_reminder(task_id, ts);
+                app.status = "reminder set".into();
+            }
+            None => app.status = format!("couldn't parse time: {text}"),
+        },
+        Purpose::AddEvent => {
+            let parts: Vec<&str> = text.splitn(3, '|').map(str::trim).collect();
+            match parts.as_slice() {
+                [title, start, end] => match (parse_remind_at(start), parse_remind_at(end)) {
+                    (Some(start_at), Some(end_at)) => {
+                        let _ = app.db.create_event(title, start_at, end_at);
+                        app.status = "event added".into();
+                    }
+                    _ => app.status = "couldn't parse event start/end time".into(),
+                },
+                _ => app.status = "format: Title | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM".into(),
+            }
+        }
+    }
+    app.mode = Mode::Normal;
+    app.refresh();
+}
+
+fn draw(frame: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .split(frame.area());
+
+    let items: Vec<ListItem> = app
+        .rows
+        .iter()
+        .map(|row| {
+            let indent = "  ".repeat(row.depth);
+            let check = if row.task.done { "[x]" } else { "[ ]" };
+            let bell = if app.reminder_counts.get(&row.task.id).copied().unwrap_or(0) > 0 {
+                " \u{23F0}"
+            } else {
+                ""
+            };
+            let line = format!("{indent}{check} {}{bell}", row.task.title);
+            let style = if row.task.done {
+                Style::default()
+                    .add_modifier(Modifier::CROSSED_OUT)
+                    .fg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
+            ListItem::new(Line::from(Span::styled(line, style)))
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.rows.is_empty() {
+        state.select(Some(app.selected));
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Tasks"))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+
+    frame.render_stateful_widget(list, chunks[0], &mut state);
+
+    let bottom_text = match &app.mode {
+        Mode::Normal => app.status.clone(),
+        Mode::Input { buffer, .. } => format!("> {buffer}"),
+        Mode::ConfirmDelete { has_children, .. } => {
+            if *has_children {
+                "delete task and its subtasks? y/n".to_string()
+            } else {
+                "delete task? y/n".to_string()
+            }
+        }
+    };
+    let bottom = Paragraph::new(bottom_text).block(Block::default().borders(Borders::ALL));
+    frame.render_widget(bottom, chunks[1]);
+}
