@@ -1579,6 +1579,7 @@ name = "gui"
 version = "0.1.0"
 dependencies = [
  "caldav_core",
+ "chrono",
  "iced",
 ]
 

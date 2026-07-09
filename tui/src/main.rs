@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 
-use caldav_core::{Db, Task};
+use caldav_core::{Db, Event as CalEvent, Task};
 use chrono::{Local, NaiveDateTime, TimeZone};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -9,6 +9,17 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
+
+// Adwaita blue, kept consistent with the GUI's accent token.
+const ACCENT: Color = Color::Rgb(0x35, 0x84, 0xe4);
+const WARNING: Color = Color::Rgb(0xe5, 0xa5, 0x0a);
+const DANGER: Color = Color::Rgb(0xe0, 0x1b, 0x24);
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Pane {
+    Tasks,
+    Events,
+}
 
 enum Purpose {
     AddTask,
@@ -31,7 +42,9 @@ struct Row {
 
 struct App {
     db: Db,
+    pane: Pane,
     rows: Vec<Row>,
+    events: Vec<CalEvent>,
     reminder_counts: HashMap<i64, i64>,
     selected: usize,
     mode: Mode,
@@ -39,17 +52,19 @@ struct App {
 }
 
 const HELP: &str =
-    "a add  s subtask  e edit  d delete  space toggle  r reminder  v event  g sync  q quit";
+    "a add  s subtask  e edit  d delete  space toggle  r reminder  v event  g sync  Tab pane  q quit";
 
 impl App {
     fn new(db: Db) -> Self {
         let mut app = App {
             db,
+            pane: Pane::Tasks,
             rows: Vec::new(),
+            events: Vec::new(),
             reminder_counts: HashMap::new(),
             selected: 0,
             mode: Mode::Normal,
-            status: HELP.to_string(),
+            status: String::new(),
         };
         app.refresh();
         app
@@ -59,6 +74,7 @@ impl App {
         let tasks = self.db.list_tasks().unwrap_or_default();
         self.reminder_counts = self.db.reminder_counts().unwrap_or_default();
         self.rows = build_tree(tasks);
+        self.events = self.db.list_events().unwrap_or_default();
         if self.selected >= self.rows.len() && !self.rows.is_empty() {
             self.selected = self.rows.len() - 1;
         }
@@ -164,13 +180,19 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
 fn handle_normal_key(app: &mut App, code: KeyCode) -> bool {
     match code {
         KeyCode::Char('q') => return true,
+        KeyCode::Tab => {
+            app.pane = match app.pane {
+                Pane::Tasks => Pane::Events,
+                Pane::Events => Pane::Tasks,
+            };
+        }
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.selected > 0 {
+            if app.pane == Pane::Tasks && app.selected > 0 {
                 app.selected -= 1;
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.selected + 1 < app.rows.len() {
+            if app.pane == Pane::Tasks && app.selected + 1 < app.rows.len() {
                 app.selected += 1;
             }
         }
@@ -292,42 +314,90 @@ fn submit_input(app: &mut App, purpose: Purpose, text: String) {
 fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .constraints([Constraint::Length(2), Constraint::Min(3), Constraint::Length(3)])
         .split(frame.area());
 
-    let items: Vec<ListItem> = app
-        .rows
-        .iter()
-        .map(|row| {
-            let indent = "  ".repeat(row.depth);
-            let check = if row.task.done { "[x]" } else { "[ ]" };
-            let bell = if app.reminder_counts.get(&row.task.id).copied().unwrap_or(0) > 0 {
-                " \u{23F0}"
-            } else {
-                ""
-            };
-            let line = format!("{indent}{check} {}{bell}", row.task.title);
-            let style = if row.task.done {
-                Style::default()
-                    .add_modifier(Modifier::CROSSED_OUT)
-                    .fg(Color::DarkGray)
-            } else {
-                Style::default()
-            };
-            ListItem::new(Line::from(Span::styled(line, style)))
-        })
-        .collect();
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled(" caldav ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        Span::raw(HELP),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
+    frame.render_widget(header, chunks[0]);
 
-    let mut state = ListState::default();
-    if !app.rows.is_empty() {
-        state.select(Some(app.selected));
+    let border_style = Style::default().fg(Color::DarkGray);
+    let title_style = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+
+    match app.pane {
+        Pane::Tasks => {
+            let items: Vec<ListItem> = app
+                .rows
+                .iter()
+                .map(|row| {
+                    let indent = if row.depth > 0 { "  \u{21b3} " } else { "" };
+                    let check = if row.task.done { "[x] " } else { "[ ] " };
+                    let style = if row.task.done {
+                        Style::default().add_modifier(Modifier::CROSSED_OUT).fg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    };
+                    let mut spans = vec![Span::styled(format!("{indent}{check}{}", row.task.title), style)];
+                    if app.reminder_counts.get(&row.task.id).copied().unwrap_or(0) > 0 {
+                        spans.push(Span::styled(" \u{23F0}", Style::default().fg(WARNING)));
+                    }
+                    ListItem::new(Line::from(spans))
+                })
+                .collect();
+
+            let mut state = ListState::default();
+            if !app.rows.is_empty() {
+                state.select(Some(app.selected));
+            }
+
+            let list = List::new(items)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(border_style)
+                        .title(Span::styled(" Tasks ", title_style)),
+                )
+                .highlight_style(Style::default().bg(ACCENT).fg(Color::White));
+
+            frame.render_stateful_widget(list, chunks[1], &mut state);
+        }
+        Pane::Events => {
+            let items: Vec<ListItem> = app
+                .events
+                .iter()
+                .map(|event| {
+                    let range = match (
+                        Local.timestamp_opt(event.start_at, 0).single(),
+                        Local.timestamp_opt(event.end_at, 0).single(),
+                    ) {
+                        (Some(s), Some(e)) => {
+                            format!("{} \u{2013} {}", s.format("%a %b %-d %H:%M"), e.format("%H:%M"))
+                        }
+                        _ => String::new(),
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::raw(format!("{}  ", event.title)),
+                        Span::styled(range, Style::default().fg(Color::DarkGray)),
+                    ]))
+                })
+                .collect();
+
+            let list = List::new(items).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style)
+                    .title(Span::styled(" Events ", title_style)),
+            );
+            frame.render_widget(list, chunks[1]);
+        }
     }
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Tasks"))
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-
-    frame.render_stateful_widget(list, chunks[0], &mut state);
 
     let bottom_text = match &app.mode {
         Mode::Normal => app.status.clone(),
@@ -340,6 +410,15 @@ fn draw(frame: &mut Frame, app: &App) {
             }
         }
     };
-    let bottom = Paragraph::new(bottom_text).block(Block::default().borders(Borders::ALL));
-    frame.render_widget(bottom, chunks[1]);
+    let bottom_border_color = match &app.mode {
+        Mode::Normal => Color::DarkGray,
+        Mode::Input { .. } => ACCENT,
+        Mode::ConfirmDelete { .. } => DANGER,
+    };
+    let bottom = Paragraph::new(bottom_text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(bottom_border_color)),
+    );
+    frame.render_widget(bottom, chunks[2]);
 }

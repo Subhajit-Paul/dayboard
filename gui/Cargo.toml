@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 caldav_core = { version = "0.1.0", path = "../core" }
+chrono = "0.4.45"
 iced = "0.14.0"
