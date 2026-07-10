@@ -4,11 +4,10 @@ use std::io;
 use caldav_core::{Db, Event as CalEvent, Reminder, Task};
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::calendar::{CalendarEventStore, Monthly};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs};
 use ratatui::Frame;
 
 // Adwaita blue, kept consistent with the GUI's accent token.
@@ -61,10 +60,57 @@ struct App {
     cal_cursor: NaiveDate,
     mode: Mode,
     status: String,
+    nerd: bool,
 }
 
-const HELP: &str = "a add  s subtask  e edit  d delete  space toggle  r reminder  v event  g sync  \
-Tab pane  1/2/3 scale  h/l nav  t today  q quit";
+/// Text markers, swapped for Nerd Font glyphs when the user enables them (they
+/// only render on a terminal using a Nerd Font, so this is opt-in). Toggle at
+/// runtime with `f`, or default it on with `CALDAV_TUI_NERD=1`.
+struct Glyphs {
+    check_on: &'static str,
+    check_off: &'static str,
+    bell: &'static str,
+    event: &'static str,
+    tab_tasks: &'static str,
+    tab_events: &'static str,
+    tab_calendar: &'static str,
+}
+
+impl Glyphs {
+    fn new(nerd: bool) -> Self {
+        if nerd {
+            Glyphs {
+                check_on: "\u{f14a} ",   // nf-fa-check_square
+                check_off: "\u{f096} ",  // nf-fa-square_o
+                bell: "\u{f0f3} ",       // nf-fa-bell
+                event: "\u{f017} ",      // nf-fa-clock_o
+                tab_tasks: "\u{f0ae} ",  // nf-fa-tasks
+                tab_events: "\u{f017} ", // nf-fa-clock_o
+                tab_calendar: "\u{f073} ", // nf-fa-calendar
+            }
+        } else {
+            Glyphs {
+                check_on: "[x] ",
+                check_off: "[ ] ",
+                bell: "",
+                event: "",
+                tab_tasks: "",
+                tab_events: "",
+                tab_calendar: "",
+            }
+        }
+    }
+}
+
+/// Context-sensitive key hints for the focused pane, shown dim in the footer
+/// when idle — far friendlier than one wall-of-text help line.
+fn contextual_help(pane: Pane) -> &'static str {
+    match pane {
+        Pane::Tasks => "a add  s subtask  e edit  d delete  space done  r reminder  g sync  f fonts  Tab pane  q quit",
+        Pane::Events => "v add event  g sync  f fonts  Tab pane  q quit",
+        Pane::Calendar => "1/2/3 day/week/month  h/l move  t today  Enter add  f fonts  Tab pane  q quit",
+    }
+}
 
 impl App {
     fn new(db: Db) -> Self {
@@ -80,6 +126,7 @@ impl App {
             cal_cursor: Local::now().date_naive(),
             mode: Mode::Normal,
             status: String::new(),
+            nerd: matches!(std::env::var("CALDAV_TUI_NERD").as_deref(), Ok("1") | Ok("true")),
         };
         app.refresh();
         app
@@ -150,10 +197,12 @@ fn week_start(date: NaiveDate) -> NaiveDate {
     date - Duration::days(date.weekday().num_days_from_monday() as i64)
 }
 
-/// Bridges our chrono dates to the `time` crate's `Date`, which is what
-/// ratatui's built-in `Monthly` calendar widget requires.
-fn to_time_date(d: NaiveDate) -> Option<time::Date> {
-    time::Date::from_calendar_date(d.year(), time::Month::try_from(d.month() as u8).ok()?, d.day() as u8).ok()
+/// 42 Monday-first days (6 weeks) covering the month containing `cursor`.
+/// ponytail: mirrors gui/src/calendar.rs's `month_grid`; kept per-frontend.
+fn month_days(cursor: NaiveDate) -> Vec<NaiveDate> {
+    let first = cursor.with_day(1).expect("day 1 is always valid");
+    let start = week_start(first);
+    (0..42).map(|i| start + Duration::days(i)).collect()
 }
 
 fn main() -> io::Result<()> {
@@ -306,6 +355,14 @@ fn handle_normal_key(app: &mut App, code: KeyCode) -> bool {
             };
             app.status = "event: Title | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM".into();
         }
+        KeyCode::Char('f') => {
+            app.nerd = !app.nerd;
+            app.status = if app.nerd {
+                "Nerd Font glyphs on (needs a Nerd Font in your terminal)".into()
+            } else {
+                "Nerd Font glyphs off".into()
+            };
+        }
         KeyCode::Char('g') => {
             if !caldav_core::auth::is_authenticated() {
                 app.status = "not connected — run `caldavd --auth` in a terminal first".into();
@@ -377,110 +434,194 @@ fn submit_input(app: &mut App, purpose: Purpose, text: String) {
     app.refresh();
 }
 
+/// Focused-pane block: an accent border + accent title, so the active pane
+/// reads as focused (only one pane is ever shown at a time).
+fn pane_block(title: &str) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+}
+
+/// Renders a centered, dim empty-state message inside `block`. The TUI's
+/// stand-in for the GUI's illustrated empty states.
+fn render_empty(frame: &mut Frame, area: Rect, block: Block<'static>, title: &str, hint: &str) {
+    // nudge the message toward vertical center without a full layout pass.
+    let pad = (area.height.saturating_sub(4) / 2) as usize;
+    let mut lines: Vec<Line> = vec![Line::from(""); pad];
+    lines.push(Line::from(Span::styled(
+        title.to_string(),
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(hint.to_string(), Style::default().fg(Color::DarkGray))));
+    let para = Paragraph::new(Text::from(lines)).alignment(Alignment::Center).block(block);
+    frame.render_widget(para, area);
+}
+
+/// Events grouped under bold accent day headers, mirroring the GUI's
+/// date-grouped event cards. Relies on `list_events` being start-ordered.
+fn events_items(app: &App) -> Vec<ListItem<'static>> {
+    let g = Glyphs::new(app.nerd);
+    let mut items = Vec::new();
+    let mut last_date: Option<NaiveDate> = None;
+    for event in &app.events {
+        let day = to_naive_date(event.start_at);
+        if last_date != Some(day) {
+            if last_date.is_some() {
+                items.push(ListItem::new(Line::from("")));
+            }
+            items.push(ListItem::new(Span::styled(
+                day.format("%A, %b %-d").to_string(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )));
+            last_date = Some(day);
+        }
+        let range = match (
+            Local.timestamp_opt(event.start_at, 0).single(),
+            Local.timestamp_opt(event.end_at, 0).single(),
+        ) {
+            (Some(s), Some(e)) => format!("{} \u{2013} {}", s.format("%H:%M"), e.format("%H:%M")),
+            _ => String::new(),
+        };
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(format!("  {}{range}  ", g.event), Style::default().fg(WARNING)),
+            Span::raw(event.title.clone()),
+        ])));
+    }
+    items
+}
+
 fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(2), Constraint::Min(3), Constraint::Length(3)])
         .split(frame.area());
 
-    let header = Paragraph::new(Line::from(vec![
-        Span::styled(" caldav ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-        Span::raw(HELP),
-    ]))
-    .block(
-        Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
-    frame.render_widget(header, chunks[0]);
+    let g = Glyphs::new(app.nerd);
 
-    let border_style = Style::default().fg(Color::DarkGray);
-    let title_style = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+    // Header: brand mark, pane tab strip, and a credit link, sharing one rule.
+    let header = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(11), Constraint::Min(0), Constraint::Length(18)])
+        .split(chunks[0]);
+    let underline = Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(Color::DarkGray));
+    let brand = Paragraph::new(Line::from(Span::styled(
+        " Dayboard",
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    )))
+    .block(underline.clone());
+    frame.render_widget(brand, header[0]);
+
+    let selected_tab = match app.pane {
+        Pane::Tasks => 0,
+        Pane::Events => 1,
+        Pane::Calendar => 2,
+    };
+    let tabs = Tabs::new(vec![
+        format!("{}Tasks", g.tab_tasks),
+        format!("{}Events", g.tab_events),
+        format!("{}Calendar", g.tab_calendar),
+    ])
+    .select(selected_tab)
+    .style(Style::default().fg(Color::Gray))
+    .highlight_style(Style::default().fg(Color::White).bg(ACCENT).add_modifier(Modifier::BOLD))
+    .divider(Span::styled("  ", Style::default()))
+    .padding(" ", " ")
+    .block(underline.clone());
+    frame.render_widget(tabs, header[1]);
+
+    let credit = Paragraph::new(Line::from(Span::styled(
+        "subhajitpaul.com ",
+        Style::default().fg(Color::DarkGray),
+    )))
+    .alignment(Alignment::Right)
+    .block(underline);
+    frame.render_widget(credit, header[2]);
 
     match app.pane {
         Pane::Tasks => {
-            let items: Vec<ListItem> = app
-                .rows
-                .iter()
-                .map(|row| {
-                    let indent = if row.depth > 0 { "  \u{21b3} " } else { "" };
-                    let check = if row.task.done { "[x] " } else { "[ ] " };
-                    let style = if row.task.done {
-                        Style::default().add_modifier(Modifier::CROSSED_OUT).fg(Color::DarkGray)
-                    } else {
-                        Style::default()
-                    };
-                    let mut spans = vec![Span::styled(format!("{indent}{check}{}", row.task.title), style)];
-                    if app.reminder_counts.get(&row.task.id).copied().unwrap_or(0) > 0 {
-                        spans.push(Span::styled(" (reminder)", Style::default().fg(WARNING)));
-                    }
-                    ListItem::new(Line::from(spans))
-                })
-                .collect();
+            if app.rows.is_empty() {
+                render_empty(frame, chunks[1], pane_block("Tasks"), "No tasks yet", "Press 'a' to add your first task");
+            } else {
+                let items: Vec<ListItem> = app
+                    .rows
+                    .iter()
+                    .map(|row| {
+                        let indent = if row.depth > 0 { "  \u{21b3} " } else { "" };
+                        let check = if row.task.done { g.check_on } else { g.check_off };
+                        let style = if row.task.done {
+                            Style::default().add_modifier(Modifier::CROSSED_OUT).fg(Color::DarkGray)
+                        } else {
+                            Style::default()
+                        };
+                        let mut spans = vec![Span::styled(format!("{indent}{check}{}", row.task.title), style)];
+                        let count = app.reminder_counts.get(&row.task.id).copied().unwrap_or(0);
+                        if count > 0 {
+                            let label = if app.nerd {
+                                format!("  {}{count}", g.bell)
+                            } else if count == 1 {
+                                " (reminder)".to_string()
+                            } else {
+                                format!(" ({count} reminders)")
+                            };
+                            spans.push(Span::styled(label, Style::default().fg(WARNING)));
+                        }
+                        ListItem::new(Line::from(spans))
+                    })
+                    .collect();
 
-            let mut state = ListState::default();
-            if !app.rows.is_empty() {
+                let mut state = ListState::default();
                 state.select(Some(app.selected));
+
+                let list = List::new(items)
+                    .block(pane_block("Tasks"))
+                    .highlight_style(Style::default().bg(ACCENT).fg(Color::White).add_modifier(Modifier::BOLD))
+                    .highlight_symbol(" ");
+
+                frame.render_stateful_widget(list, chunks[1], &mut state);
             }
-
-            let list = List::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(border_style)
-                        .title(Span::styled(" Tasks ", title_style)),
-                )
-                .highlight_style(Style::default().bg(ACCENT).fg(Color::White));
-
-            frame.render_stateful_widget(list, chunks[1], &mut state);
         }
         Pane::Events => {
-            let items: Vec<ListItem> = app
-                .events
-                .iter()
-                .map(|event| {
-                    let range = match (
-                        Local.timestamp_opt(event.start_at, 0).single(),
-                        Local.timestamp_opt(event.end_at, 0).single(),
-                    ) {
-                        (Some(s), Some(e)) => {
-                            format!("{} \u{2013} {}", s.format("%a %b %-d %H:%M"), e.format("%H:%M"))
-                        }
-                        _ => String::new(),
-                    };
-                    ListItem::new(Line::from(vec![
-                        Span::raw(format!("{}  ", event.title)),
-                        Span::styled(range, Style::default().fg(Color::DarkGray)),
-                    ]))
-                })
-                .collect();
-
-            let list = List::new(items).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(border_style)
-                    .title(Span::styled(" Events ", title_style)),
-            );
-            frame.render_widget(list, chunks[1]);
-        }
-        Pane::Calendar => draw_calendar(frame, chunks[1], app, border_style, title_style),
-    }
-
-    let bottom_text = match &app.mode {
-        Mode::Normal => app.status.clone(),
-        Mode::Input { buffer, .. } => format!("> {buffer}"),
-        Mode::ConfirmDelete { has_children, .. } => {
-            if *has_children {
-                "delete task and its subtasks? y/n".to_string()
+            if app.events.is_empty() {
+                render_empty(frame, chunks[1], pane_block("Events"), "No events yet", "Press 'v' to add an event");
             } else {
-                "delete task? y/n".to_string()
+                let list = List::new(events_items(app)).block(pane_block("Events"));
+                frame.render_widget(list, chunks[1]);
             }
         }
-    };
-    let bottom_border_color = match &app.mode {
-        Mode::Normal => Color::DarkGray,
-        Mode::Input { .. } => ACCENT,
-        Mode::ConfirmDelete { .. } => DANGER,
+        Pane::Calendar => draw_calendar(frame, chunks[1], app),
+    }
+
+    let (bottom_text, bottom_border_color): (Text, Color) = match &app.mode {
+        Mode::Normal => {
+            if app.status.is_empty() {
+                (
+                    Text::from(Span::styled(contextual_help(app.pane), Style::default().fg(Color::DarkGray))),
+                    Color::DarkGray,
+                )
+            } else {
+                (Text::from(app.status.clone()), ACCENT)
+            }
+        }
+        Mode::Input { buffer, .. } => (
+            Text::from(Line::from(vec![
+                Span::styled("> ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::raw(buffer.clone()),
+                Span::styled("\u{2588}", Style::default().fg(ACCENT)),
+            ])),
+            ACCENT,
+        ),
+        Mode::ConfirmDelete { has_children, .. } => {
+            let msg = if *has_children {
+                "delete task and its subtasks? y/n"
+            } else {
+                "delete task? y/n"
+            };
+            (Text::from(Span::styled(msg, Style::default().fg(DANGER).add_modifier(Modifier::BOLD))), DANGER)
+        }
     };
     let bottom = Paragraph::new(bottom_text).block(
         Block::default()
@@ -494,6 +635,7 @@ fn draw(frame: &mut Frame, app: &App) {
 /// shared building block for both the Day view and each day-section of the
 /// Week view.
 fn calendar_items_for_day(app: &App, day: NaiveDate) -> Vec<ListItem<'static>> {
+    let g = Glyphs::new(app.nerd);
     let mut items = Vec::new();
     for event in app.events.iter().filter(|e| to_naive_date(e.start_at) == day) {
         let range = match (
@@ -504,6 +646,7 @@ fn calendar_items_for_day(app: &App, day: NaiveDate) -> Vec<ListItem<'static>> {
             _ => String::new(),
         };
         items.push(ListItem::new(Line::from(vec![
+            Span::styled(format!("  {}", g.event), Style::default().fg(ACCENT)),
             Span::raw(format!("{}  ", event.title)),
             Span::styled(range, Style::default().fg(Color::DarkGray)),
         ])));
@@ -514,9 +657,11 @@ fn calendar_items_for_day(app: &App, day: NaiveDate) -> Vec<ListItem<'static>> {
             .single()
             .map(|dt| dt.format("%H:%M").to_string())
             .unwrap_or_default();
+        let suffix = if app.nerd { String::new() } else { " (reminder)".to_string() };
         items.push(ListItem::new(Line::from(vec![
+            Span::styled(format!("  {}", g.bell), Style::default().fg(WARNING)),
             Span::raw(format!("{title}  ")),
-            Span::styled(format!("{time} (reminder)"), Style::default().fg(WARNING)),
+            Span::styled(format!("{time}{suffix}"), Style::default().fg(WARNING)),
         ])));
     }
     items
@@ -544,63 +689,111 @@ fn week_items(app: &App) -> Vec<ListItem<'static>> {
     items
 }
 
-/// Builds the day -> style map for the Month view. ponytail: a day with
-/// both an event and a reminder just shows the event's style (event styled
-/// last, so it wins) rather than a merged style — `CalendarEventStore::add`
-/// is last-write-wins by design, and combining styles would mean reaching
-/// into its internal map type directly. Upgrade if that distinction turns
-/// out to matter in practice.
-fn calendar_event_store(app: &App) -> CalendarEventStore {
-    let mut store = CalendarEventStore(Default::default());
-    for (reminder, _) in &app.reminders {
-        if let Some(td) = to_time_date(to_naive_date(reminder.remind_at)) {
-            store.add(td, Style::default().fg(WARNING).add_modifier(Modifier::BOLD));
+/// A hand-rolled Month grid: a full 7-wide, 6-tall grid of roomy day cells
+/// (big day numbers + colored event/reminder dots), replacing ratatui's tiny
+/// built-in `Monthly` widget so the calendar stays legible at small terminal
+/// font sizes.
+fn draw_month(frame: &mut Frame, area: Rect, app: &App) {
+    let block = accent_block(format!(" Calendar \u{b7} {} ", app.cal_cursor.format("%B %Y")));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // one weekday-header row + six equal week rows.
+    let mut vconstraints = vec![Constraint::Length(1)];
+    vconstraints.extend(vec![Constraint::Ratio(1, 6); 6]);
+    let rows = Layout::vertical(vconstraints).split(inner);
+    let hconstraints = vec![Constraint::Ratio(1, 7); 7];
+
+    let head_cols = Layout::horizontal(hconstraints.clone()).split(rows[0]);
+    for (i, name) in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].iter().enumerate() {
+        // left-aligned with a leading space to line up with the day numbers
+        // below (which render as " {day}"), not centered.
+        let head = Paragraph::new(Line::from(Span::styled(
+            format!(" {name}"),
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+        )));
+        frame.render_widget(head, head_cols[i]);
+    }
+
+    let days = month_days(app.cal_cursor);
+    let today = Local::now().date_naive();
+    for w in 0..6 {
+        let cols = Layout::horizontal(hconstraints.clone()).split(rows[w + 1]);
+        for (d, col) in cols.iter().enumerate() {
+            draw_month_cell(frame, *col, app, days[w * 7 + d], today);
         }
     }
-    for event in &app.events {
-        if let Some(td) = to_time_date(to_naive_date(event.start_at)) {
-            store.add(td, Style::default().bg(ACCENT).fg(Color::White));
-        }
-    }
-    if let Some(td) = to_time_date(app.cal_cursor) {
-        store.add(td, Style::default().add_modifier(Modifier::REVERSED));
-    }
-    store
 }
 
-fn draw_calendar(frame: &mut Frame, area: Rect, app: &App, border_style: Style, title_style: Style) {
-    match app.cal_scale {
-        CalScale::Month => {
-            let Some(display_date) = to_time_date(app.cal_cursor) else { return };
-            let store = calendar_event_store(app);
-            let monthly = Monthly::new(display_date, store)
-                .show_month_header(title_style)
-                .show_weekdays_header(border_style)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(border_style)
-                        .title(Span::styled(" Calendar ", title_style)),
-                );
-            frame.render_widget(monthly, area);
+fn draw_month_cell(frame: &mut Frame, area: Rect, app: &App, day: NaiveDate, today: NaiveDate) {
+    let in_month = day.month() == app.cal_cursor.month();
+    let is_today = day == today;
+    let is_cursor = day == app.cal_cursor;
+
+    // only the selected day and today get a box, so the grid stays uncluttered.
+    let content_area = if is_cursor || is_today {
+        let color = if is_cursor { ACCENT } else { WARNING };
+        let mut style = Style::default().fg(color);
+        if is_cursor {
+            style = style.add_modifier(Modifier::BOLD);
         }
+        let cell = Block::default().borders(Borders::ALL).border_style(style);
+        let inner = cell.inner(area);
+        frame.render_widget(cell, area);
+        inner
+    } else {
+        area
+    };
+
+    let num_style = if is_today {
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+    } else if in_month {
+        Style::default()
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let events = app.events.iter().filter(|e| to_naive_date(e.start_at) == day).count();
+    let reminders = app.reminders.iter().filter(|(r, _)| to_naive_date(r.remind_at) == day).count();
+
+    let mut lines = vec![Line::from(Span::styled(format!(" {}", day.day()), num_style))];
+    let mut dots: Vec<Span> = vec![Span::raw(" ")];
+    for _ in 0..events.min(5) {
+        dots.push(Span::styled("\u{2022}", Style::default().fg(ACCENT)));
+    }
+    for _ in 0..reminders.min(3) {
+        dots.push(Span::styled("\u{2022}", Style::default().fg(WARNING)));
+    }
+    if dots.len() > 1 {
+        lines.push(Line::from(dots));
+    }
+    frame.render_widget(Paragraph::new(lines), content_area);
+}
+
+/// An accent-bordered focused block with a dynamic title (calendar views).
+fn accent_block(title: String) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(title, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)))
+}
+
+fn draw_calendar(frame: &mut Frame, area: Rect, app: &App) {
+    match app.cal_scale {
+        CalScale::Month => draw_month(frame, area, app),
         CalScale::Week => {
-            let list = List::new(week_items(app)).block(
-                Block::default().borders(Borders::ALL).border_style(border_style).title(Span::styled(
-                    format!(" Week of {} ", week_start(app.cal_cursor).format("%b %-d")),
-                    title_style,
-                )),
-            );
+            let title = format!(" Week of {} ", week_start(app.cal_cursor).format("%b %-d"));
+            let list = List::new(week_items(app)).block(accent_block(title));
             frame.render_widget(list, area);
         }
         CalScale::Day => {
-            let list = List::new(calendar_items_for_day(app, app.cal_cursor)).block(
-                Block::default().borders(Borders::ALL).border_style(border_style).title(Span::styled(
-                    format!(" {} ", app.cal_cursor.format("%A, %b %-d")),
-                    title_style,
-                )),
-            );
-            frame.render_widget(list, area);
+            let title = format!(" {} ", app.cal_cursor.format("%A, %b %-d"));
+            let items = calendar_items_for_day(app, app.cal_cursor);
+            if items.is_empty() {
+                render_empty(frame, area, accent_block(title), "Nothing scheduled", "Press Enter to add an event on this day");
+            } else {
+                frame.render_widget(List::new(items).block(accent_block(title)), area);
+            }
         }
     }
 }

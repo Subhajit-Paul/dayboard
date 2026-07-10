@@ -1,11 +1,12 @@
 mod calendar;
+mod icons;
 mod theme;
 
 use std::collections::HashMap;
 
 use caldav_core::{Db, Event, Reminder, Task};
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
-use iced::widget::{button, checkbox, column, container, row, rule, scrollable, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Space};
 use iced::{Alignment, Element, Length, Task as IcedTask};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,7 +153,10 @@ enum Message {
     CalNext,
     CalToday,
     SelectDay(NaiveDate),
+    OpenSite,
 }
+
+const SITE_URL: &str = "https://subhajitpaul.com";
 
 fn update(app: &mut App, message: Message) {
     match message {
@@ -231,50 +235,113 @@ fn update(app: &mut App, message: Message) {
             app.event_start = start.format("%Y-%m-%d %H:%M").to_string();
             app.event_end = end.format("%Y-%m-%d %H:%M").to_string();
         }
+        Message::OpenSite => {
+            // fire-and-forget; if xdg-open is missing there's simply no browser.
+            let _ = std::process::Command::new("xdg-open").arg(SITE_URL).spawn();
+        }
     }
 }
 
-fn header_bar(app: &App) -> Element<'_, Message> {
-    let tab = |label: &'static str, target: View| {
-        button(text(label).size(theme::SIZE_BODY))
-            .style(theme::tab_button(app.view == target))
-            .padding([theme::XS, theme::MD])
-            .on_press(Message::SwitchView(target))
+fn sidebar(app: &App) -> Element<'_, Message> {
+    let th = app.theme();
+    let muted = theme::muted_color(&th);
+
+    let nav = |bytes: &'static [u8], label: &'static str, target: View| {
+        let selected = app.view == target;
+        let tint = if selected { theme::on_accent() } else { muted };
+        let font = if selected { theme::semibold() } else { iced::Font::DEFAULT };
+        button(
+            row![
+                icons::icon(bytes, 20.0, tint),
+                text(label).size(theme::SIZE_BODY).font(font),
+            ]
+            .spacing(theme::SM)
+            .align_y(Alignment::Center),
+        )
+        .style(theme::nav_item(selected))
+        .padding([theme::SM, theme::MD])
+        .width(Length::Fill)
+        .on_press(Message::SwitchView(target))
     };
 
-    let bar = row![
-        text("caldav").size(theme::SIZE_TITLE).font(theme::bold()),
-        Space::new().width(Length::Fill),
-        tab("Tasks", View::Tasks),
-        tab("Events", View::Events),
-        tab("Calendar", View::Calendar),
-        Space::new().width(Length::Fill),
-        button(text("Sync").size(theme::SIZE_BODY))
-            .style(button::primary)
-            .padding([theme::XS, theme::MD])
-            .on_press(Message::SyncNow),
-    ]
-    .spacing(theme::SM)
-    .align_y(Alignment::Center);
+    let brand = container(
+        row![
+            icons::icon(icons::CALENDAR, 22.0, theme::on_accent()),
+            text("Dayboard").size(theme::SIZE_TITLE).font(theme::bold()),
+        ]
+        .spacing(theme::XS)
+        .align_y(Alignment::Center),
+    )
+    .style(theme::brand)
+    .padding([theme::SM, theme::MD])
+    .width(Length::Fill);
 
-    column![
-        container(bar).padding([theme::SM, theme::MD]).width(Length::Fill),
-        rule::horizontal(1).style(theme::divider),
+    let sync = button(
+        row![
+            icons::icon(icons::SYNC, 18.0, theme::on_accent()),
+            text("Sync").size(theme::SIZE_BODY),
+        ]
+        .spacing(theme::XS)
+        .align_y(Alignment::Center),
+    )
+    .style(theme::primary_button)
+    .padding([theme::SM, theme::MD])
+    .width(Length::Fill)
+    .on_press(Message::SyncNow);
+
+    let credit = column![
+        text("Made by Subhajit Paul").size(theme::SIZE_CAPTION).style(theme::muted_text),
+        button(text("subhajitpaul.com").size(theme::SIZE_CAPTION))
+            .style(theme::link_button)
+            .padding(0)
+            .on_press(Message::OpenSite),
     ]
+    .spacing(theme::XXS)
+    .align_x(Alignment::Center)
+    .width(Length::Fill);
+
+    let col = column![
+        brand,
+        Space::new().height(theme::SM),
+        nav(icons::TASKS, "Tasks", View::Tasks),
+        nav(icons::EVENTS, "Events", View::Events),
+        nav(icons::CALENDAR, "Calendar", View::Calendar),
+        Space::new().height(Length::Fill),
+        status_line(app),
+        sync,
+        Space::new().height(theme::XS),
+        credit,
+    ]
+    .spacing(theme::XXS)
+    .padding(theme::MD)
+    .width(Length::Fixed(224.0))
+    .height(Length::Fill);
+
+    container(col).style(theme::sidebar).height(Length::Fill).into()
+}
+
+fn page_header<'a>(title: &'a str, subtitle: String) -> Element<'a, Message> {
+    column![
+        text(title).size(theme::SIZE_DISPLAY).font(theme::bold()),
+        text(subtitle).size(theme::SIZE_META).style(theme::muted_text),
+    ]
+    .spacing(theme::XXS)
     .into()
 }
 
-fn empty_state<'a>(title: &'a str, hint: &'a str) -> Element<'a, Message> {
+fn empty_state<'a>(illustration: &'static [u8], title: &'a str, hint: &'a str) -> Element<'a, Message> {
     container(
         column![
-            text(title).size(theme::SIZE_TITLE),
+            icons::illustration(illustration, 220.0),
+            text(title).size(theme::SIZE_TITLE).font(theme::semibold()),
             text(hint).size(theme::SIZE_META).style(theme::muted_text),
         ]
-        .spacing(theme::XXS)
+        .spacing(theme::SM)
         .align_x(Alignment::Center),
     )
     .padding(theme::XL)
     .center_x(Length::Fill)
+    .center_y(Length::Fill)
     .into()
 }
 
@@ -288,7 +355,10 @@ fn status_line(app: &App) -> Element<'_, Message> {
 
 fn task_row<'a>(app: &'a App, r: &'a TaskRow) -> Element<'a, Message> {
     let task_id = r.task.id;
-    let has_reminder = app.reminder_counts.get(&task_id).copied().unwrap_or(0) > 0;
+    let reminder_count = app.reminder_counts.get(&task_id).copied().unwrap_or(0);
+    let th = app.theme();
+    let muted = theme::muted_color(&th);
+    let warning = th.extended_palette().warning.base.color;
 
     let title = if r.task.done {
         text(r.task.title.clone()).size(theme::SIZE_BODY).style(theme::muted_text)
@@ -296,10 +366,9 @@ fn task_row<'a>(app: &'a App, r: &'a TaskRow) -> Element<'a, Message> {
         text(r.task.title.clone()).size(theme::SIZE_BODY)
     };
 
-    let mut content = row![Space::new().width(r.depth as f32 * 24.0)]
+    let mut content = row![Space::new().width(r.depth as f32 * 20.0)]
         .spacing(theme::SM)
-        .align_y(Alignment::Center)
-        .padding([theme::XS, 0.0]);
+        .align_y(Alignment::Center);
 
     content = content.push(
         checkbox(r.task.done)
@@ -309,34 +378,64 @@ fn task_row<'a>(app: &'a App, r: &'a TaskRow) -> Element<'a, Message> {
             .spacing(theme::SM),
     );
     content = content.push(title);
-    if has_reminder {
-        content = content.push(text("reminder").size(theme::SIZE_CAPTION).style(theme::warning_text));
+    if reminder_count > 0 {
+        content = content.push(
+            row![
+                icons::icon(icons::BELL, 14.0, warning),
+                text(reminder_count.to_string()).size(theme::SIZE_CAPTION).style(theme::warning_text),
+            ]
+            .spacing(theme::XXS)
+            .align_y(Alignment::Center),
+        );
     }
     content = content.push(Space::new().width(Length::Fill));
     content = content.push(
-        button(text("+").size(theme::SIZE_BODY))
+        button(icons::icon(icons::PLUS, 16.0, muted))
             .style(theme::ghost_button)
+            .padding(theme::XS)
             .on_press(Message::SetParent(task_id)),
     );
     content = content.push(
-        button(text("x").size(theme::SIZE_META))
+        button(icons::icon(icons::TRASH, 16.0, muted))
             .style(theme::danger_ghost_button)
+            .padding(theme::XS)
             .on_press(Message::DeleteTask(task_id)),
     );
 
     content.into()
 }
 
-fn divided_list<'a>(items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
-    let mut col = column![];
-    let last = items.len().saturating_sub(1);
-    for (i, item) in items.into_iter().enumerate() {
-        col = col.push(item);
-        if i != last {
-            col = col.push(rule::horizontal(1).style(theme::divider));
-        }
+/// Stacks each item in its own elevated card. The card look is the app's
+/// primary list treatment (Tasks, Events, calendar Day view).
+fn card_list<'a>(items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+    let mut col = column![].spacing(theme::XS);
+    for item in items {
+        col = col.push(
+            container(item)
+                .style(theme::card)
+                .padding([theme::SM, theme::MD])
+                .width(Length::Fill),
+        );
     }
-    scrollable(col).height(Length::Fill).into()
+    // small inset so card shadows aren't clipped by the scroll viewport edges.
+    scrollable(column![col].padding([theme::XXS, theme::XXS]))
+        .height(Length::Fill)
+        .into()
+}
+
+fn add_button(label: &str, msg: Message) -> Element<'_, Message> {
+    button(
+        row![
+            icons::icon(icons::PLUS, 16.0, theme::on_accent()),
+            text(label.to_string()).size(theme::SIZE_BODY),
+        ]
+        .spacing(theme::XS)
+        .align_y(Alignment::Center),
+    )
+    .style(theme::primary_button)
+    .padding([theme::XS, theme::MD])
+    .on_press(msg)
+    .into()
 }
 
 fn task_composer(app: &App) -> Element<'_, Message> {
@@ -348,59 +447,71 @@ fn task_composer(app: &App) -> Element<'_, Message> {
                 .find(|r| r.task.id == id)
                 .map(|r| r.task.title.clone())
                 .unwrap_or_default();
-            text(format!("Adding subtask to: {label}")).size(theme::SIZE_CAPTION).style(theme::muted_text).into()
+            text(format!("Adding subtask to: {label}")).size(theme::SIZE_CAPTION).style(theme::accent_text).into()
         }
         None => Space::new().height(0.0).into(),
     };
 
     let mut input_row = row![
-        text_input("New task title", &app.input)
+        text_input("Add a task\u{2026}", &app.input)
             .on_input(Message::InputChanged)
             .on_submit(Message::Submit)
+            .style(theme::input)
             .padding(theme::SM),
-        button(text("Add")).style(button::primary).padding([theme::XS, theme::MD]).on_press(Message::Submit),
+        add_button("Add", Message::Submit),
     ]
-    .spacing(theme::SM);
+    .spacing(theme::SM)
+    .align_y(Alignment::Center);
 
     if app.adding_parent.is_some() {
         input_row = input_row.push(
-            button(text("Cancel")).style(button::text).padding([theme::XS, theme::MD]).on_press(Message::ClearParent),
+            button(text("Cancel")).style(theme::ghost_button).padding([theme::XS, theme::MD]).on_press(Message::ClearParent),
         );
     }
 
-    container(column![breadcrumb, input_row, status_line(app)].spacing(theme::XXS))
-        .padding(theme::MD)
-        .style(theme::tinted_container)
+    container(column![breadcrumb, input_row].spacing(theme::XS))
+        .padding(theme::SM)
         .width(Length::Fill)
         .into()
 }
 
 fn tasks_view(app: &App) -> Element<'_, Message> {
+    let open = app.rows.iter().filter(|r| !r.task.done).count();
+    let done = app.rows.len() - open;
+    let subtitle = format!("{open} open \u{b7} {done} done");
+
     let list = if app.rows.is_empty() {
-        empty_state("No tasks yet", "Add one below to get started")
+        empty_state(icons::ILL_TASKS, "No tasks yet", "Add your first task below to get started")
     } else {
-        divided_list(app.rows.iter().map(|r| task_row(app, r)).collect())
+        card_list(app.rows.iter().map(|r| task_row(app, r)).collect())
     };
 
-    column![task_composer(app), list].spacing(theme::MD).padding(theme::MD).into()
+    column![page_header("Tasks", subtitle), task_composer(app), list]
+        .spacing(theme::MD)
+        .padding(theme::LG)
+        .into()
 }
 
-fn event_row(event: &Event) -> Element<'_, Message> {
+fn event_row<'a>(app: &'a App, event: &'a Event) -> Element<'a, Message> {
     let event_id = event.id;
+    let th = app.theme();
+    let accent = theme::accent_color(&th);
+    let muted = theme::muted_color(&th);
     row![
+        icons::icon(icons::CLOCK, 18.0, accent),
         column![
-            text(event.title.clone()).size(theme::SIZE_BODY),
+            text(event.title.clone()).size(theme::SIZE_BODY).font(theme::semibold()),
             text(format_range(event.start_at, event.end_at)).size(theme::SIZE_META).style(theme::muted_text),
         ]
         .spacing(theme::XXS),
         Space::new().width(Length::Fill),
-        button(text("x").size(theme::SIZE_META))
+        button(icons::icon(icons::TRASH, 16.0, muted))
             .style(theme::danger_ghost_button)
+            .padding(theme::XS)
             .on_press(Message::DeleteEvent(event_id)),
     ]
     .spacing(theme::SM)
     .align_y(Alignment::Center)
-    .padding([theme::XS, 0.0])
     .into()
 }
 
@@ -408,36 +519,43 @@ fn event_composer(app: &App) -> Element<'_, Message> {
     let input_row = row![
         text_input("Event title", &app.event_title)
             .on_input(Message::EventTitleChanged)
+            .style(theme::input)
             .padding(theme::SM)
             .width(Length::Fill),
         text_input("Start: YYYY-MM-DD HH:MM", &app.event_start)
             .on_input(Message::EventStartChanged)
+            .style(theme::input)
             .padding(theme::SM)
             .width(Length::Fixed(190.0)),
         text_input("End: YYYY-MM-DD HH:MM", &app.event_end)
             .on_input(Message::EventEndChanged)
             .on_submit(Message::SubmitEvent)
+            .style(theme::input)
             .padding(theme::SM)
             .width(Length::Fixed(190.0)),
-        button(text("Add")).style(button::primary).padding([theme::XS, theme::MD]).on_press(Message::SubmitEvent),
+        add_button("Add", Message::SubmitEvent),
     ]
-    .spacing(theme::SM);
+    .spacing(theme::SM)
+    .align_y(Alignment::Center);
 
-    container(column![input_row, status_line(app)].spacing(theme::XXS))
-        .padding(theme::MD)
-        .style(theme::tinted_container)
-        .width(Length::Fill)
-        .into()
+    container(input_row).padding(theme::SM).width(Length::Fill).into()
 }
 
 fn events_view(app: &App) -> Element<'_, Message> {
+    let subtitle = match app.events.len() {
+        1 => "1 event".to_string(),
+        n => format!("{n} events"),
+    };
     let list = if app.events.is_empty() {
-        empty_state("No events yet", "Add one below \u{2014} synced events will appear here too")
+        empty_state(icons::ILL_EVENTS, "No events yet", "Add one below \u{2014} synced events appear here too")
     } else {
-        divided_list(app.events.iter().map(event_row).collect())
+        card_list(app.events.iter().map(|e| event_row(app, e)).collect())
     };
 
-    column![event_composer(app), list].spacing(theme::MD).padding(theme::MD).into()
+    column![page_header("Events", subtitle), event_composer(app), list]
+        .spacing(theme::MD)
+        .padding(theme::LG)
+        .into()
 }
 
 fn view(app: &App) -> Element<'_, Message> {
@@ -447,12 +565,17 @@ fn view(app: &App) -> Element<'_, Message> {
         View::Calendar => calendar::view(app),
     };
 
-    column![header_bar(app), body].into()
+    row![
+        sidebar(app),
+        container(body).width(Length::Fill).height(Length::Fill),
+    ]
+    .height(Length::Fill)
+    .into()
 }
 
 pub fn main() -> iced::Result {
     iced::application(App::new, update, view)
-        .title("caldav")
+        .title("Dayboard")
         .theme(|app: &App| app.theme())
         .subscription(|_| iced::system::theme_changes().map(Message::SystemThemeChanged))
         .run()

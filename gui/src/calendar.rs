@@ -63,48 +63,89 @@ fn period_label(cursor: NaiveDate, scale: CalendarScale) -> String {
 }
 
 fn nav_bar(app: &App) -> Element<'_, Message> {
+    let th = app.theme();
+    let muted = theme::muted_color(&th);
+
     let scale_tab = |label: &'static str, target: CalendarScale| {
         button(text(label).size(theme::SIZE_BODY))
-            .style(theme::tab_button(app.cal_scale == target))
+            .style(theme::segment(app.cal_scale == target))
             .padding([theme::XS, theme::MD])
             .on_press(Message::CalScaleChanged(target))
     };
 
+    let segmented = container(
+        row![
+            scale_tab("Day", CalendarScale::Day),
+            scale_tab("Week", CalendarScale::Week),
+            scale_tab("Month", CalendarScale::Month),
+        ]
+        .spacing(theme::XXS),
+    )
+    .style(theme::tinted_container)
+    .padding(theme::XXS);
+
     row![
-        button(text("<").size(theme::SIZE_BODY)).style(theme::ghost_button).on_press(Message::CalPrev),
-        button(text("Today").size(theme::SIZE_BODY)).style(theme::ghost_button).on_press(Message::CalToday),
-        button(text(">").size(theme::SIZE_BODY)).style(theme::ghost_button).on_press(Message::CalNext),
-        text(period_label(app.cal_cursor, app.cal_scale)).size(theme::SIZE_BODY),
+        button(crate::icons::icon(crate::icons::CHEVRON_LEFT, 18.0, muted))
+            .style(theme::ghost_button)
+            .padding(theme::XS)
+            .on_press(Message::CalPrev),
+        button(crate::icons::icon(crate::icons::CHEVRON_RIGHT, 18.0, muted))
+            .style(theme::ghost_button)
+            .padding(theme::XS)
+            .on_press(Message::CalNext),
+        button(
+            row![
+                crate::icons::icon(crate::icons::TODAY, 16.0, muted),
+                text("Today").size(theme::SIZE_BODY),
+            ]
+            .spacing(theme::XXS)
+            .align_y(Alignment::Center)
+        )
+        .style(theme::ghost_button)
+        .padding([theme::XS, theme::SM])
+        .on_press(Message::CalToday),
+        text(period_label(app.cal_cursor, app.cal_scale)).size(theme::SIZE_TITLE).font(theme::semibold()),
         Space::new().width(Length::Fill),
-        scale_tab("Day", CalendarScale::Day),
-        scale_tab("Week", CalendarScale::Week),
-        scale_tab("Month", CalendarScale::Month),
+        segmented,
     ]
     .spacing(theme::SM)
     .align_y(Alignment::Center)
     .into()
 }
 
-fn reminder_row<'a>(reminder: &'a Reminder, title: &'a str) -> Element<'a, Message> {
+fn reminder_row<'a>(app: &'a App, reminder: &'a Reminder, title: &'a str) -> Element<'a, Message> {
+    let warning = app.theme().extended_palette().warning.base.color;
     let time = Local
         .timestamp_opt(reminder.remind_at, 0)
         .single()
         .map(|dt| dt.format("%H:%M").to_string())
         .unwrap_or_default();
     row![
+        crate::icons::icon(crate::icons::BELL, 15.0, warning),
         text(title).size(theme::SIZE_BODY),
         Space::new().width(Length::Fill),
         text(time).size(theme::SIZE_META).style(theme::warning_text),
     ]
     .spacing(theme::SM)
     .align_y(Alignment::Center)
-    .padding([theme::XS, 0.0])
     .into()
 }
 
+/// A small solid indicator dot in the given color.
+fn dot(color: iced::Color) -> Element<'static, Message> {
+    container(Space::new().width(6.0).height(6.0)).style(theme::dot(color)).into()
+}
+
 fn month_cell(app: &App, day: NaiveDate, today: NaiveDate) -> Element<'_, Message> {
+    let th = app.theme();
+    let accent = theme::accent_color(&th);
+    let warning = th.extended_palette().warning.base.color;
     let in_month = day.month() == app.cal_cursor.month();
-    let day_number: Element<'_, Message> = if in_month {
+    let is_today = day == today;
+
+    let day_number: Element<'_, Message> = if is_today {
+        text(day.day().to_string()).size(theme::SIZE_BODY).font(theme::bold()).style(theme::accent_text).into()
+    } else if in_month {
         text(day.day().to_string()).size(theme::SIZE_BODY).into()
     } else {
         text(day.day().to_string()).size(theme::SIZE_BODY).style(theme::muted_text).into()
@@ -113,18 +154,18 @@ fn month_cell(app: &App, day: NaiveDate, today: NaiveDate) -> Element<'_, Messag
     let event_count = app.events.iter().filter(|e| to_local_date(e.start_at) == day).count();
     let reminder_count = app.reminders.iter().filter(|(r, _)| to_local_date(r.remind_at) == day).count();
 
-    let mut cell_col = column![day_number].spacing(theme::XXS);
-    if event_count > 0 {
-        let label = if event_count == 1 { "1 event".to_string() } else { format!("{event_count} events") };
-        cell_col = cell_col.push(text(label).size(theme::SIZE_CAPTION));
+    let mut dots = row![].spacing(theme::XXS).align_y(Alignment::Center);
+    for _ in 0..event_count.min(4) {
+        dots = dots.push(dot(accent));
     }
     if reminder_count > 0 {
-        let label = if reminder_count == 1 { "1 reminder".to_string() } else { format!("{reminder_count} reminders") };
-        cell_col = cell_col.push(text(label).size(theme::SIZE_CAPTION).style(theme::warning_text));
+        dots = dots.push(dot(warning));
     }
 
-    let cell = container(cell_col).padding(theme::XXS).width(Length::Fill).height(Length::Fill);
-    let cell = if day == today { cell.style(theme::tinted_container) } else { cell };
+    let cell_col = column![day_number, Space::new().height(Length::Fill), dots].spacing(theme::XXS);
+
+    let cell = container(cell_col).padding(theme::XS).width(Length::Fill).height(Length::Fill);
+    let cell = if is_today { cell.style(theme::today_cell) } else { cell };
 
     button(cell)
         .style(theme::ghost_button)
@@ -137,9 +178,13 @@ fn month_cell(app: &App, day: NaiveDate, today: NaiveDate) -> Element<'_, Messag
 
 fn month_view(app: &App) -> Element<'_, Message> {
     let weekday_header = row(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].into_iter().map(|d| {
-        text(d).size(theme::SIZE_CAPTION).style(theme::muted_text).width(Length::Fill).into()
+        container(text(d).size(theme::SIZE_CAPTION).font(theme::semibold()).style(theme::muted_text))
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .into()
     }))
-    .spacing(theme::XXS);
+    .spacing(theme::XXS)
+    .padding([0.0, theme::XS]);
 
     let today = Local::now().date_naive();
     let mut cal_grid = grid(std::iter::empty()).columns(7).spacing(theme::XXS).height(Length::Fill);
@@ -147,23 +192,34 @@ fn month_view(app: &App) -> Element<'_, Message> {
         cal_grid = cal_grid.push(month_cell(app, day, today));
     }
 
-    column![weekday_header, cal_grid].spacing(theme::XS).into()
+    column![
+        weekday_header,
+        container(cal_grid).style(theme::card).padding(theme::XS).height(Length::Fill),
+    ]
+    .spacing(theme::XS)
+    .into()
 }
 
 fn week_day_column(app: &App, day: NaiveDate) -> Element<'_, Message> {
-    let header = button(text(day.format("%a %-d").to_string()).size(theme::SIZE_CAPTION))
-        .style(theme::tab_button(day == app.cal_cursor))
-        .on_press(Message::SelectDay(day));
+    let is_today = day == Local::now().date_naive();
+    let header = button(
+        text(day.format("%a %-d").to_string())
+            .size(theme::SIZE_META)
+            .font(if is_today { theme::semibold() } else { iced::Font::DEFAULT }),
+    )
+    .style(theme::segment(day == app.cal_cursor))
+    .width(Length::Fill)
+    .on_press(Message::SelectDay(day));
 
     let mut col = column![header].spacing(theme::XXS);
     for event in app.events.iter().filter(|e| to_local_date(e.start_at) == day) {
-        col = col.push(crate::event_row(event));
+        col = col.push(container(crate::event_row(app, event)).style(theme::card).padding(theme::XS));
     }
     for (reminder, title) in app.reminders.iter().filter(|(r, _)| to_local_date(r.remind_at) == day) {
-        col = col.push(reminder_row(reminder, title));
+        col = col.push(container(reminder_row(app, reminder, title)).style(theme::card).padding(theme::XS));
     }
 
-    container(scrollable(col)).width(Length::FillPortion(1)).height(Length::Fill).into()
+    container(scrollable(col.spacing(theme::XXS))).width(Length::FillPortion(1)).height(Length::Fill).into()
 }
 
 fn week_view(app: &App) -> Element<'_, Message> {
@@ -176,23 +232,27 @@ fn week_view(app: &App) -> Element<'_, Message> {
 
 fn day_view(app: &App) -> Element<'_, Message> {
     let day = app.cal_cursor;
-    let day_events: Vec<Element<'_, Message>> =
-        app.events.iter().filter(|e| to_local_date(e.start_at) == day).map(crate::event_row).collect();
+    let day_events: Vec<Element<'_, Message>> = app
+        .events
+        .iter()
+        .filter(|e| to_local_date(e.start_at) == day)
+        .map(|e| crate::event_row(app, e))
+        .collect();
     let day_reminders: Vec<(&Reminder, &String)> =
         app.reminders.iter().filter(|(r, _)| to_local_date(r.remind_at) == day).map(|(r, t)| (r, t)).collect();
 
     let events_section = if day_events.is_empty() {
-        crate::empty_state("No events", "Add one below")
+        crate::empty_state(crate::icons::ILL_CALENDAR, "Nothing scheduled", "This day is free \u{2014} add an event below")
     } else {
-        crate::divided_list(day_events)
+        crate::card_list(day_events)
     };
 
     let mut sections = column![events_section].spacing(theme::MD);
     if !day_reminders.is_empty() {
         let mut rem_col =
-            column![text("Reminders").size(theme::SIZE_META).style(theme::muted_text)].spacing(theme::XXS);
+            column![text("Reminders").size(theme::SIZE_META).font(theme::semibold()).style(theme::muted_text)].spacing(theme::XS);
         for (reminder, title) in &day_reminders {
-            rem_col = rem_col.push(reminder_row(reminder, title));
+            rem_col = rem_col.push(container(reminder_row(app, reminder, title)).style(theme::card).padding([theme::SM, theme::MD]));
         }
         sections = sections.push(rem_col);
     }
@@ -207,7 +267,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         CalendarScale::Month => month_view(app),
     };
 
-    column![nav_bar(app), body].spacing(theme::MD).padding(theme::MD).into()
+    column![nav_bar(app), body].spacing(theme::MD).padding(theme::LG).into()
 }
 
 #[cfg(test)]

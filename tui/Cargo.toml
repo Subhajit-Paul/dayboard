@@ -8,4 +8,3 @@ caldav_core = { version = "0.1.0", path = "../core" }
 chrono = "0.4.45"
 crossterm = "0.29.0"
 ratatui = "0.30.2"
-time = "0.3.53"
