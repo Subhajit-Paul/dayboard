@@ -38,9 +38,9 @@ Tasks. Ships two frontends over one shared core: a rich **GUI** (built with
 ### APT (Debian/Ubuntu, x86_64)
 
 ```bash
-curl -fsSL https://subhajit-paul.github.io/dayboard/apt/dayboard-archive-keyring.gpg \
+curl -fsSL https://subhajit-paul.github.io/dayboard/dayboard-archive-keyring.gpg \
   | sudo tee /usr/share/keyrings/dayboard-archive-keyring.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/dayboard-archive-keyring.gpg] https://subhajit-paul.github.io/dayboard/apt stable main" \
+echo "deb [signed-by=/usr/share/keyrings/dayboard-archive-keyring.gpg] https://subhajit-paul.github.io/dayboard stable main" \
   | sudo tee /etc/apt/sources.list.d/dayboard.list
 sudo apt update
 sudo apt install dayboard-gui dayboard-tui dayboard-daemon
