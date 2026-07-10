@@ -1,0 +1,24 @@
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Fri, 10 Jul 2026 06:45:19 +0000
+Description: Dayboard APT repository
+Label: Dayboard
+Origin: Dayboard
+Suite: stable
+MD5Sum:
+ 0817fb967d8be9c02b0ee06cbd304c4a              177 Release
+ 5d6750ffd2f64cbe6c536dc9b85170b8             2041 main/binary-amd64/Packages
+ 1714769d5778796688085fb43e66603d              838 main/binary-amd64/Packages.gz
+SHA1:
+ 6a85fe0c53edb062413585d7ec397edb0220ea88              177 Release
+ f4ebaee5008dc916154109f45651e11998fed7d8             2041 main/binary-amd64/Packages
+ cb868f925e3635811cf4a09d36a24217465ea9ca              838 main/binary-amd64/Packages.gz
+SHA256:
+ 9a1f4bb56f796ac9d63aac7972c6eab368e9748b0926aa1a071732806c3aac7f              177 Release
+ 8634c4086f26f49d09123b547c4b4d4d3fc21201fc1882ccfe1aac537a32fbc7             2041 main/binary-amd64/Packages
+ f9c9b4eb1448a144f800ea7c2e6e0d71aa0313d20fef7da9724a26d3dc0d2565              838 main/binary-amd64/Packages.gz
+SHA512:
+ 779508969b057883a0d42bc920c4d29656ec59f4ced1c10223dc234024e2c99b6cbc914d1a84fe7e34abd996b51e370389cdc02b70e9f876566746e8fa1159f4              177 Release
+ fee9161e63e38a0e65d39dffb138d4e507a31861435fe1946324ff8211fbeedeba066312b1dabb05a30ca96ffbc6a894cc7e76ac764d8b41167e26a8b90da68a             2041 main/binary-amd64/Packages
+ aca208e25eeac9bbf0ea2f76de38d5c5d6088aa44eb1742bc0d98c56ac1b0880e7a4bee3d70bfbd22391542ed20f8b86ae53ddab1e95a2f71cd030e7a789a79a              838 main/binary-amd64/Packages.gz

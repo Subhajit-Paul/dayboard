@@ -1,0 +1,52 @@
+Package: dayboard-daemon
+Version: 0.1.2-1
+Architecture: amd64
+Maintainer: Subhajit Paul <paulsubhajit78242548@gmail.com>
+Installed-Size: 10600
+Depends: libc6 (>= 2.39)
+Filename: pool/main/dayboard-daemon_0.1.2-1_amd64.deb
+Size: 3302664
+MD5sum: a13a9bd83197463da7f4a277db143698
+SHA1: d98c00c22ac3724df99218463b050256cf75e57c
+SHA256: fc2b6be7eb4efa9e49958545d5b5095ce7f165abf03b79357a94e081ad432597
+Section: utils
+Priority: optional
+Description: Dayboard reminder daemon — background notifications and Google sync
+ Dayboard reminder daemon — background notifications and Google sync for
+ Dayboard. Run `dayboard-daemon --install` to set up the systemd --user unit.
+
+Package: dayboard-gui
+Version: 0.1.2-1
+Architecture: amd64
+Maintainer: Subhajit Paul <paulsubhajit78242548@gmail.com>
+Installed-Size: 26092
+Depends: libwayland-client0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0, libxkbcommon0
+Recommends: libgl1, libvulkan1
+Filename: pool/main/dayboard-gui_0.1.2-1_amd64.deb
+Size: 7532160
+MD5sum: fdf2790d6d9c8941718e2d438b3cdf9d
+SHA1: 8bf32ab07c3297f6448d3498e5369f99706c91d1
+SHA256: ac38c422ab7c8af50b9a1cfdd7e663e7e9032a4e32efddabcaef161036e4acc9
+Section: utils
+Priority: optional
+Description: Dayboard GUI — native Linux calendar, tasks & reminders app (iced)
+ Dayboard GUI — native Linux calendar, tasks & reminders app (iced),
+ local-first with optional Google sync.
+
+Package: dayboard-tui
+Version: 0.1.2-1
+Architecture: amd64
+Maintainer: Subhajit Paul <paulsubhajit78242548@gmail.com>
+Installed-Size: 9033
+Depends: libc6 (>= 2.39)
+Filename: pool/main/dayboard-tui_0.1.2-1_amd64.deb
+Size: 2922164
+MD5sum: b3e25157b02ff45d0f37b6e7684cb1f2
+SHA1: 13923ba25b00177b9ef7915c8525334817268a59
+SHA256: 76b5ae56cca97aaf23ff6531addaa3f9be08d28e3bab5d8ed63b44b864891f79
+Section: utils
+Priority: optional
+Description: Dayboard TUI — native Linux calendar, tasks & reminders app (ratatui)
+ Dayboard TUI — native Linux calendar, tasks & reminders app (ratatui),
+ local-first with optional Google sync.
+
