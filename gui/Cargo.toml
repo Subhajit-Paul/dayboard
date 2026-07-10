@@ -20,5 +20,5 @@ assets = [["target/release/gui", "usr/bin/dayboard-gui", "755"]]
 # winit dlopens these at runtime for windowing (X11 and Wayland), so cargo-deb's
 # ldd-based auto-Depends misses all of them; GPU driver libs are left to Recommends
 # since any working desktop already has one.
-depends = "libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxi6"
+depends = "dayboard-daemon, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxi6"
 recommends = "libgl1, libvulkan1"

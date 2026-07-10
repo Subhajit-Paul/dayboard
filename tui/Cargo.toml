@@ -18,3 +18,4 @@ extended-description = "Dayboard TUI — native Linux calendar, tasks & reminder
 section = "utils"
 priority = "optional"
 assets = [["target/release/tui", "usr/bin/dayboard-tui", "755"]]
+depends = "$auto, dayboard-daemon"

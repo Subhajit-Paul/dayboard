@@ -40,15 +40,17 @@ Tasks. Ships two frontends over one shared core: a rich **GUI** (built with
 ```bash
 curl -fsSL https://subhajit-paul.github.io/dayboard/dayboard-archive-keyring.gpg \
   | sudo tee /usr/share/keyrings/dayboard-archive-keyring.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/dayboard-archive-keyring.gpg] https://subhajit-paul.github.io/dayboard stable main" \
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/dayboard-archive-keyring.gpg] https://subhajit-paul.github.io/dayboard stable main" \
   | sudo tee /etc/apt/sources.list.d/dayboard.list
 sudo apt update
-sudo apt install dayboard-gui dayboard-tui dayboard-daemon
+sudo apt install dayboard-gui   # or dayboard-tui; both pull in dayboard-daemon
 ```
 
-Each of the three is a separate package (`dayboard-gui`, `dayboard-tui`,
-`dayboard-daemon`) so you can install just the ones you want. The repo is
-signed and updated automatically on every release.
+Each of the three is a separate package. `dayboard-gui` and `dayboard-tui`
+each depend on `dayboard-daemon` (for background reminders and sync), so
+installing either pulls it in automatically; `dayboard-daemon` can also be
+installed on its own for a headless setup. The repo is signed and updated
+automatically on every release.
 
 ### From source
 
