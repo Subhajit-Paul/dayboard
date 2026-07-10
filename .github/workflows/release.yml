@@ -20,6 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout existing APT repo (if any)
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true # gh-pages branch doesn't exist yet on first release
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
       - name: Update Rust toolchain
         run: rustup update stable && rustup default stable
 
@@ -56,6 +64,47 @@ jobs:
           cargo deb -p tui --no-build
           cargo deb -p daemon --no-build
           (cd target/debian && sha256sum *.deb > SHA256SUMS)
+
+      - name: Import GPG signing key
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "APT_GPG_KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')" >> "$GITHUB_ENV"
+
+      - name: Build APT repo
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          mkdir -p gh-pages/apt/pool/main gh-pages/apt/dists/stable/main/binary-amd64
+          cp target/debian/*.deb gh-pages/apt/pool/main/
+          cd gh-pages/apt
+          dpkg-scanpackages --arch amd64 pool /dev/null > dists/stable/main/binary-amd64/Packages
+          gzip -9fk dists/stable/main/binary-amd64/Packages
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin=Dayboard \
+            -o APT::FTPArchive::Release::Label=Dayboard \
+            -o APT::FTPArchive::Release::Suite=stable \
+            -o APT::FTPArchive::Release::Codename=stable \
+            -o APT::FTPArchive::Release::Architectures=amd64 \
+            -o APT::FTPArchive::Release::Components=main \
+            -o APT::FTPArchive::Release::Description="Dayboard APT repository" \
+            release dists/stable > dists/stable/Release
+          # ponytail: no Valid-Until set, so the Release never expires and never needs
+          # re-signing between releases; upgrade path if that's ever wanted is a cron
+          # job that re-signs on a timer.
+          gpg --batch --yes --default-key "$APT_GPG_KEYID" --clearsign -o dists/stable/InRelease dists/stable/Release
+          gpg --batch --yes --default-key "$APT_GPG_KEYID" -abs -o dists/stable/Release.gpg dists/stable/Release
+          gpg --batch --yes --export "$APT_GPG_KEYID" > dayboard-archive-keyring.gpg
+
+      - name: Publish APT repo to gh-pages
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages/apt
+          publish_branch: gh-pages
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')

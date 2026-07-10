@@ -35,6 +35,23 @@ Tasks. Ships two frontends over one shared core: a rich **GUI** (built with
 
 ## Install
 
+### APT (Debian/Ubuntu, x86_64)
+
+```bash
+curl -fsSL https://subhajit-paul.github.io/dayboard/apt/dayboard-archive-keyring.gpg \
+  | sudo tee /usr/share/keyrings/dayboard-archive-keyring.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/dayboard-archive-keyring.gpg] https://subhajit-paul.github.io/dayboard/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/dayboard.list
+sudo apt update
+sudo apt install dayboard-gui dayboard-tui dayboard-daemon
+```
+
+Each of the three is a separate package (`dayboard-gui`, `dayboard-tui`,
+`dayboard-daemon`) so you can install just the ones you want. The repo is
+signed and updated automatically on every release.
+
+### From source
+
 Requires **Rust 1.85+** (2024 edition). The GUI additionally needs the usual
 Linux windowing libraries at runtime (Wayland or X11, `libxkbcommon`).
 
