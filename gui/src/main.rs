@@ -86,9 +86,10 @@ fn default_time_str() -> String {
     rounded.format("%H:%M").to_string()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum DurationPreset {
     ThirtyMin,
+    #[default]
     OneHour,
     TwoHours,
     AllDay,
@@ -115,12 +116,6 @@ impl DurationPreset {
             Self::TwoHours => Some(120),
             Self::AllDay => None,
         }
-    }
-}
-
-impl Default for DurationPreset {
-    fn default() -> Self {
-        Self::OneHour
     }
 }
 
