@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Dayboard APT repository</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
+  pre { background: #f1f1f1; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  code { font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>Dayboard APT repository</h1>
+<p>Signed APT repository for <a href="https://github.com/Subhajit-Paul/dayboard">Dayboard</a>,
+a native Linux calendar, tasks &amp; reminders app.</p>
+<pre><code>curl -fsSL https://subhajit-paul.github.io/dayboard/dayboard-archive-keyring.gpg \
+  | sudo tee /usr/share/keyrings/dayboard-archive-keyring.gpg > /dev/null
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/dayboard-archive-keyring.gpg] https://subhajit-paul.github.io/dayboard stable main" \
+  | sudo tee /etc/apt/sources.list.d/dayboard.list
+sudo apt update
+sudo apt install dayboard-gui   # or dayboard-tui; both pull in dayboard-daemon</code></pre>
+<p>See the <a href="https://github.com/Subhajit-Paul/dayboard#readme">README</a> for more.</p>
+</body>
+</html>
