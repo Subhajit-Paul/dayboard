@@ -461,7 +461,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "caldav_core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64",
  "chrono",
@@ -920,7 +920,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "daemon"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "caldav_core",
  "notify-rust",
@@ -1644,7 +1644,7 @@ dependencies = [
 
 [[package]]
 name = "gui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "caldav_core",
  "chrono",
@@ -5090,7 +5090,7 @@ dependencies = [
 
 [[package]]
 name = "tui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "caldav_core",
  "chrono",

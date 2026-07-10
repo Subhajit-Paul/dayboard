@@ -1,6 +1,6 @@
 [package]
 name = "daemon"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 license.workspace = true
 description = "Dayboard reminder daemon — background notifications and Google sync"
