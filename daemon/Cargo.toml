@@ -2,7 +2,17 @@
 name = "daemon"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+description = "Dayboard reminder daemon — background notifications and Google sync"
 
 [dependencies]
 caldav_core = { version = "0.1.0", path = "../core" }
 notify-rust = "4.18.0"
+
+[package.metadata.deb]
+name = "dayboard-daemon"
+maintainer = "Subhajit Paul <paulsubhajit78242548@gmail.com>"
+extended-description = "Dayboard reminder daemon — background notifications and Google sync for Dayboard. Run `dayboard-daemon --install` to set up the systemd --user unit."
+section = "utils"
+priority = "optional"
+assets = [["target/release/daemon", "usr/bin/dayboard-daemon", "755"]]

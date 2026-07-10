@@ -2,9 +2,19 @@
 name = "tui"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+description = "Dayboard TUI — native Linux calendar, tasks & reminders app (ratatui)"
 
 [dependencies]
 caldav_core = { version = "0.1.0", path = "../core" }
 chrono = "0.4.45"
 crossterm = "0.29.0"
 ratatui = "0.30.2"
+
+[package.metadata.deb]
+name = "dayboard-tui"
+maintainer = "Subhajit Paul <paulsubhajit78242548@gmail.com>"
+extended-description = "Dayboard TUI — native Linux calendar, tasks & reminders app (ratatui), local-first with optional Google sync."
+section = "utils"
+priority = "optional"
+assets = [["target/release/tui", "usr/bin/dayboard-tui", "755"]]

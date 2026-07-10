@@ -44,6 +44,19 @@ jobs:
           tar -C dist -czf "$PKG.tar.gz" "$PKG"
           sha256sum "$PKG.tar.gz" > "$PKG.tar.gz.sha256"
 
+      - name: Install cargo-deb
+        if: startsWith(github.ref, 'refs/tags/')
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb packages
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          cargo deb -p gui --no-build
+          cargo deb -p tui --no-build
+          cargo deb -p daemon --no-build
+          sha256sum target/debian/*.deb > target/debian/SHA256SUMS
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -52,5 +65,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             dayboard-*-x86_64-linux.tar.gz \
             dayboard-*-x86_64-linux.tar.gz.sha256 \
+            target/debian/*.deb \
+            target/debian/SHA256SUMS \
             --title "Dayboard ${GITHUB_REF_NAME}" \
             --generate-notes

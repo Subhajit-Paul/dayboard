@@ -2,8 +2,23 @@
 name = "gui"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+description = "Dayboard GUI — native Linux calendar, tasks & reminders app (iced)"
 
 [dependencies]
 caldav_core = { version = "0.1.0", path = "../core" }
 chrono = "0.4.45"
 iced = { version = "0.14.0", features = ["svg"] }
+
+[package.metadata.deb]
+name = "dayboard-gui"
+maintainer = "Subhajit Paul <paulsubhajit78242548@gmail.com>"
+extended-description = "Dayboard GUI — native Linux calendar, tasks & reminders app (iced), local-first with optional Google sync."
+section = "utils"
+priority = "optional"
+assets = [["target/release/gui", "usr/bin/dayboard-gui", "755"]]
+# winit dlopens these at runtime for windowing (X11 and Wayland), so cargo-deb's
+# ldd-based auto-Depends misses all of them; GPU driver libs are left to Recommends
+# since any working desktop already has one.
+depends = "libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxi6"
+recommends = "libgl1, libvulkan1"
