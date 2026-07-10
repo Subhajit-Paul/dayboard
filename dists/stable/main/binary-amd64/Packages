@@ -1,14 +1,14 @@
 Package: dayboard-daemon
-Version: 0.1.4-1
+Version: 0.1.5-1
 Architecture: amd64
 Maintainer: Subhajit Paul <paulsubhajit78242548@gmail.com>
 Installed-Size: 10600
 Depends: libc6 (>= 2.39)
-Filename: pool/main/dayboard-daemon_0.1.4-1_amd64.deb
-Size: 3305660
-MD5sum: 701c6dd3c931118a2f9d4f9a3b746601
-SHA1: d732fc5314964167c874524e242c20ae2cae7438
-SHA256: a7e48bf537e0d0717653fc62f061b175ac09172af55df7bfab99c39a0d3853dc
+Filename: pool/main/dayboard-daemon_0.1.5-1_amd64.deb
+Size: 3305852
+MD5sum: 85e5b5c0fc696a5fffced6b8e8d74a06
+SHA1: 1f331671af443ac77b15968cd05f16f3bc2371ff
+SHA256: 2da38805c88f525caf011c0d9638827eef1b785f649f24a27861a2089c194193
 Section: utils
 Priority: optional
 Description: Dayboard reminder daemon — background notifications and Google sync
@@ -16,17 +16,17 @@ Description: Dayboard reminder daemon — background notifications and Google sy
  Dayboard. Run `dayboard-daemon --install` to set up the systemd --user unit.
 
 Package: dayboard-gui
-Version: 0.1.4-1
+Version: 0.1.5-1
 Architecture: amd64
 Maintainer: Subhajit Paul <paulsubhajit78242548@gmail.com>
 Installed-Size: 26152
 Depends: dayboard-daemon, libwayland-client0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0, libxkbcommon0
 Recommends: libgl1, libvulkan1, desktop-file-utils, hicolor-icon-theme
-Filename: pool/main/dayboard-gui_0.1.4-1_amd64.deb
-Size: 7554316
-MD5sum: e521d3cd6aa0cbd36cd81f7cf6059b6f
-SHA1: bc58b0eab2cc5c416eac340c1fdc76a9c6f87df0
-SHA256: 326efc36e46d1580592baf41639fb33c0c4f3b9f3f57c0abdd61a17d08210a82
+Filename: pool/main/dayboard-gui_0.1.5-1_amd64.deb
+Size: 7554876
+MD5sum: 02694bc9197337d9c185c64abd6ad025
+SHA1: 88c8438222e5e6dc581622da3617506d63c5167e
+SHA256: 4aa7305ead3f20a5a7e3e3863597288b20facf0a0cb46c64bcf87ef93e6c5efc
 Section: utils
 Priority: optional
 Description: Dayboard GUI — native Linux calendar, tasks & reminders app (iced)
@@ -34,16 +34,16 @@ Description: Dayboard GUI — native Linux calendar, tasks & reminders app (iced
  local-first with optional Google sync.
 
 Package: dayboard-tui
-Version: 0.1.4-1
+Version: 0.1.5-1
 Architecture: amd64
 Maintainer: Subhajit Paul <paulsubhajit78242548@gmail.com>
 Installed-Size: 9033
 Depends: dayboard-daemon, libc6 (>= 2.39)
-Filename: pool/main/dayboard-tui_0.1.4-1_amd64.deb
-Size: 2922240
-MD5sum: b21af3d67da5e6be973bda791a542af0
-SHA1: 2bb37ef1a1e879ba65f94f862b820a88a3c73949
-SHA256: 9993ba42ab20ccb8ca53c41aa0a1d88ab33f670c9ca2046581e2bfb5084087e3
+Filename: pool/main/dayboard-tui_0.1.5-1_amd64.deb
+Size: 2922204
+MD5sum: 0ddba277c4f01141d9b2b413f639abd1
+SHA1: 879c879f21ba95c91c144907a65215260ae7bf58
+SHA256: 5cf31e86ec11340f68f43adead079a73361c0d63a9e1b7a9d3e0d5b7fd7e6c91
 Section: utils
 Priority: optional
 Description: Dayboard TUI — native Linux calendar, tasks & reminders app (ratatui)
