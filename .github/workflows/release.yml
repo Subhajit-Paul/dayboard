@@ -34,7 +34,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev pandoc
 
       - name: Build release
         run: cargo build --workspace --release
@@ -79,6 +79,11 @@ jobs:
           set -euo pipefail
           mkdir -p gh-pages/apt/pool/main gh-pages/apt/dists/stable/main/binary-amd64
           cp target/debian/*.deb gh-pages/apt/pool/main/
+          mkdir -p gh-pages/apt/docs
+          cp -r docs/screenshots gh-pages/apt/docs/
+          pandoc README.md -f gfm -t html5 --standalone --metadata title="Dayboard" \
+            --include-in-header=.github/apt-page-style.html \
+            -o gh-pages/apt/index.html
           cd gh-pages/apt
           dpkg-scanpackages --arch amd64 pool /dev/null > dists/stable/main/binary-amd64/Packages
           gzip -9fk dists/stable/main/binary-amd64/Packages
@@ -97,7 +102,6 @@ jobs:
           gpg --batch --yes --default-key "$APT_GPG_KEYID" --clearsign -o dists/stable/InRelease dists/stable/Release
           gpg --batch --yes --default-key "$APT_GPG_KEYID" -abs -o dists/stable/Release.gpg dists/stable/Release
           gpg --batch --yes --export "$APT_GPG_KEYID" > dayboard-archive-keyring.gpg
-          cp ../../.github/apt-index.html index.html
 
       - name: Publish APT repo to gh-pages
         if: startsWith(github.ref, 'refs/tags/')
