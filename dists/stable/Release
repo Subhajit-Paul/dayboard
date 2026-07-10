@@ -1,24 +1,24 @@
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Fri, 10 Jul 2026 07:03:02 +0000
+Date: Fri, 10 Jul 2026 10:45:13 +0000
 Description: Dayboard APT repository
 Label: Dayboard
 Origin: Dayboard
 Suite: stable
 MD5Sum:
- 64fc4bea1e14d1a39dfd55ba47f68b36              177 Release
- c6e53ad280da1b98bab01936472365a1             2075 main/binary-amd64/Packages
- 4675e45df041373ac410e71833144895              843 main/binary-amd64/Packages.gz
+ 7df0b8fec2df5b8d594ec623049aca6e              177 Release
+ 6bc5f5b60bbc4a556b6a1cbb5617d9a4             2115 main/binary-amd64/Packages
+ d0700bde5a20968922a3c9aefa6d6e72              870 main/binary-amd64/Packages.gz
 SHA1:
- 944ade5773869702e8f5c4b6b88ca1e0559d4c16              177 Release
- 858ce45d412a029b550913bbfc08ddbf57949ddb             2075 main/binary-amd64/Packages
- 0ffde51f688ca6530ed2fc6a6a659be34f4e15dc              843 main/binary-amd64/Packages.gz
+ 509679a53f9bf8f61dc8bf321fb79ea933ff06cb              177 Release
+ bb7144b233612f364ac603123cc14e28a4d4e5bb             2115 main/binary-amd64/Packages
+ 8cc0c03c6ec4dbc5ed3441f9ffbf07204818c389              870 main/binary-amd64/Packages.gz
 SHA256:
- 84adfc3fe08bfa409cbfb9ac371219e10b46165837884e66d44f8ec1fc641471              177 Release
- ce8738dc65a4e8eb5436855b101f9f5b34fe241f22db568074d5ac5b40cacd97             2075 main/binary-amd64/Packages
- 869b56e967a89986b10d126533920ba09b33665695edd2be5d30e4e85e4ac1fe              843 main/binary-amd64/Packages.gz
+ d455f0c79ac8740fc768e5da408e96bdd0ac3e7f66d05d0c5c913fcda34332bc              177 Release
+ 637bbb25825c1c6ce1d94170af46c17897fd4e61f2dd6f321c7d9aa8ddca01af             2115 main/binary-amd64/Packages
+ cc707f9be25fd3096fe2092cccf5aa74753d62c2e8279670e840b5a2d7933a05              870 main/binary-amd64/Packages.gz
 SHA512:
- b42257a033dfeb25338126e9965dd3baab85246bf6db173b7007c8d5dd51e26797166d9f41fc11ff612e23b5c6b0a418b47d35af61cff48e506ad12ca3274e1f              177 Release
- 452055b42f1cd0ec281fd1c49168e92c5af5559da2214233a40f8b3a491ec02a1c61c5b3d776301dbe3b62ec29dfd6aeb8a5708bb1f385bbd6096a6b4777e7c3             2075 main/binary-amd64/Packages
- 5c710caafba748324b7a20f8b7756ff45a4df8a9f216bb1e051b2c9bacdd5085c319a6b21ff3effc2b0d8ebcade0a1e8dbef5274ee3748e5b265d23c9c2eb25b              843 main/binary-amd64/Packages.gz
+ b0e14e1dd5b926004c2247e97973ea84cf2e86a716021f9c37302710c3db029c3a5c9155f8680dc1ca6d1a7ab3c890b1e1d825872e3813c90e64fd0377b74ba9              177 Release
+ a70d70bfc98c8b19d0979b1ad84c0021fe9972ee01eafbd5a8278043cc00eab4cb2c95d93a07557baaffa1ef739682ab8b98e3e7451f78041482f2cb787b0aa4             2115 main/binary-amd64/Packages
+ b248e9ab96065bf44863863b0ea68576592b749dd31c953567c74bf4b78fd4c7de436bc92f9d50ce8b8b484f8d8b73dcc7aca9c0f43bde6d736cf50e2d799cfd              870 main/binary-amd64/Packages.gz
