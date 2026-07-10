@@ -16,9 +16,16 @@ maintainer = "Subhajit Paul <paulsubhajit78242548@gmail.com>"
 extended-description = "Dayboard GUI — native Linux calendar, tasks & reminders app (iced), local-first with optional Google sync."
 section = "utils"
 priority = "optional"
-assets = [["target/release/gui", "usr/bin/dayboard-gui", "755"]]
+assets = [
+    ["target/release/gui", "usr/bin/dayboard-gui", "755"],
+    ["assets/dayboard-gui.desktop", "usr/share/applications/dayboard-gui.desktop", "644"],
+    ["assets/icons/dayboard-gui.svg", "usr/share/icons/hicolor/scalable/apps/dayboard-gui.svg", "644"],
+]
 # winit dlopens these at runtime for windowing (X11 and Wayland), so cargo-deb's
 # ldd-based auto-Depends misses all of them; GPU driver libs are left to Recommends
 # since any working desktop already has one.
 depends = "dayboard-daemon, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxi6"
-recommends = "libgl1, libvulkan1"
+# desktop-file-utils/hicolor-icon-theme's own dpkg triggers refresh the app
+# launcher and icon cache after install; both ship on virtually every real
+# desktop already, so Recommends (not Depends) is enough.
+recommends = "libgl1, libvulkan1, desktop-file-utils, hicolor-icon-theme"

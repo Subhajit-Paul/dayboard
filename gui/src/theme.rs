@@ -388,6 +388,13 @@ pub fn input(theme: &Theme, status: text_input::Status) -> text_input::Style {
     }
 }
 
+/// Same as [`input`] but with a danger-colored border regardless of focus,
+/// for a field currently holding unparseable text.
+pub fn input_invalid(theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let palette = theme.extended_palette();
+    text_input::Style { border: Border { color: palette.danger.base.color, ..input(theme, status).border }, ..input(theme, status) }
+}
+
 pub fn checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::Style {
     let palette = theme.extended_palette();
     let checked = matches!(

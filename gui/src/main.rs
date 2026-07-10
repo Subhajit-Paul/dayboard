@@ -5,7 +5,7 @@ mod theme;
 use std::collections::HashMap;
 
 use caldav_core::{Db, Event, Reminder, Task};
-use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Space};
 use iced::{Alignment, Element, Length, Task as IcedTask};
 
@@ -41,26 +41,117 @@ fn build_tree(tasks: Vec<Task>) -> Vec<TaskRow> {
     rows
 }
 
-// ponytail: duplicated from tui/src/main.rs's parse_remind_at rather than
-// moved into core — core is out of scope for this pass. Move it there if a
-// third consumer (e.g. daemon) ever needs the same parsing.
-fn parse_datetime(input: &str) -> Option<i64> {
-    let input = input.trim();
-    if let Some(rest) = input.strip_prefix('+') {
-        let split = rest.len().checked_sub(1)?;
-        let (num, unit) = rest.split_at(split);
-        let n: i64 = num.parse().ok()?;
-        let secs = match unit {
-            "s" => n,
-            "m" => n * 60,
-            "h" => n * 3600,
-            "d" => n * 86400,
-            _ => return None,
-        };
-        return Some(caldav_core::db::now() + secs);
+/// Accepts "today", "tomorrow" (case-insensitive), or an ISO date. Empty
+/// input also means "today" since that's the composer's default.
+fn parse_event_date(input: &str, today: NaiveDate) -> Option<NaiveDate> {
+    match input.trim().to_lowercase().as_str() {
+        "" | "today" => Some(today),
+        "tomorrow" => Some(today + Duration::days(1)),
+        _ => NaiveDate::parse_from_str(input.trim(), "%Y-%m-%d").ok(),
     }
-    let ndt = NaiveDateTime::parse_from_str(input, "%Y-%m-%d %H:%M").ok()?;
-    Local.from_local_datetime(&ndt).single().map(|dt| dt.timestamp())
+}
+
+/// Accepts 24-hour ("15:00") or 12-hour ("3pm", "3:00 PM", "3 PM") input,
+/// so a non-technical user typing however they'd naturally say it still
+/// works — not just one exact strftime format.
+fn parse_event_time(input: &str) -> Option<NaiveTime> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(t) = NaiveTime::parse_from_str(trimmed, "%H:%M") {
+        return Some(t);
+    }
+    // chrono's "%I%p" alone fails to parse ("NotEnough") — insert ":00" so
+    // "3pm" becomes "3:00PM" and always goes through the one format that works.
+    let mut compact: String = trimmed.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
+    if !compact.contains(':')
+        && let Some(pos) = compact.find(['A', 'P'])
+    {
+        compact.insert_str(pos, ":00");
+    }
+    NaiveTime::parse_from_str(&compact, "%I:%M%p").ok()
+}
+
+fn to_epoch(date: NaiveDate, time: NaiveTime) -> Option<i64> {
+    Local.from_local_datetime(&NaiveDateTime::new(date, time)).single().map(|dt| dt.timestamp())
+}
+
+/// Next quarter-hour from now, e.g. 14:12 -> "14:15" — a ready-to-submit
+/// default so most users never have to type a time at all.
+fn default_time_str() -> String {
+    let now = Local::now().time();
+    let mins_into_hour = now.minute() % 15;
+    let rounded = now + Duration::minutes((15 - mins_into_hour) as i64 % 15);
+    rounded.format("%H:%M").to_string()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DurationPreset {
+    ThirtyMin,
+    OneHour,
+    TwoHours,
+    AllDay,
+}
+
+impl DurationPreset {
+    const ALL: [DurationPreset; 4] = [Self::ThirtyMin, Self::OneHour, Self::TwoHours, Self::AllDay];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::ThirtyMin => "30 min",
+            Self::OneHour => "1 hour",
+            Self::TwoHours => "2 hours",
+            Self::AllDay => "All day",
+        }
+    }
+
+    /// None means "all day", handled separately since it isn't a fixed offset
+    /// from a start time.
+    fn minutes(self) -> Option<i64> {
+        match self {
+            Self::ThirtyMin => Some(30),
+            Self::OneHour => Some(60),
+            Self::TwoHours => Some(120),
+            Self::AllDay => None,
+        }
+    }
+}
+
+impl Default for DurationPreset {
+    fn default() -> Self {
+        Self::OneHour
+    }
+}
+
+#[cfg(test)]
+mod event_composer_tests {
+    use super::*;
+
+    #[test]
+    fn date_accepts_today_tomorrow_and_iso() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
+        assert_eq!(parse_event_date("today", today), Some(today));
+        assert_eq!(parse_event_date("Today", today), Some(today));
+        assert_eq!(parse_event_date("", today), Some(today));
+        assert_eq!(parse_event_date("tomorrow", today), Some(today + Duration::days(1)));
+        assert_eq!(parse_event_date("2026-08-01", today), NaiveDate::from_ymd_opt(2026, 8, 1));
+        assert_eq!(parse_event_date("not a date", today), None);
+    }
+
+    #[test]
+    fn time_accepts_24h_and_12h_variants() {
+        let expect = NaiveTime::from_hms_opt(15, 30, 0).unwrap();
+        assert_eq!(parse_event_time("15:30"), Some(expect));
+        assert_eq!(parse_event_time("3:30pm"), Some(expect));
+        assert_eq!(parse_event_time("3:30 PM"), Some(expect));
+        assert_eq!(parse_event_time("3:30PM"), Some(expect));
+        let three_flat = NaiveTime::from_hms_opt(15, 0, 0).unwrap();
+        assert_eq!(parse_event_time("3pm"), Some(three_flat));
+        assert_eq!(parse_event_time("3 PM"), Some(three_flat));
+        assert_eq!(parse_event_time(""), None);
+        assert_eq!(parse_event_time("not a time"), None);
+    }
 }
 
 fn format_range(start_at: i64, end_at: i64) -> String {
@@ -84,8 +175,9 @@ struct App {
     input: String,
     adding_parent: Option<i64>,
     event_title: String,
-    event_start: String,
-    event_end: String,
+    event_date: String,
+    event_time: String,
+    event_duration: DurationPreset,
     cal_scale: calendar::CalendarScale,
     cal_cursor: NaiveDate,
     status: String,
@@ -105,8 +197,9 @@ impl App {
             input: String::new(),
             adding_parent: None,
             event_title: String::new(),
-            event_start: String::new(),
-            event_end: String::new(),
+            event_date: "Today".to_string(),
+            event_time: default_time_str(),
+            event_duration: DurationPreset::default(),
             cal_scale: calendar::CalendarScale::Month,
             cal_cursor: Local::now().date_naive(),
             status: String::new(),
@@ -141,10 +234,12 @@ enum Message {
     ToggleDone(i64),
     DeleteTask(i64),
     SyncNow,
+    AuthComplete(Result<(), String>),
     SwitchView(View),
     EventTitleChanged(String),
-    EventStartChanged(String),
-    EventEndChanged(String),
+    EventDateChanged(String),
+    EventTimeChanged(String),
+    EventDurationChanged(DurationPreset),
     SubmitEvent,
     DeleteEvent(i64),
     SystemThemeChanged(iced::theme::Mode),
@@ -158,7 +253,29 @@ enum Message {
 
 const SITE_URL: &str = "https://subhajitpaul.com";
 
-fn update(app: &mut App, message: Message) {
+fn do_sync(app: &mut App) {
+    match caldav_core::sync::run(&app.db) {
+        Ok(()) => {
+            app.status = "sync complete".to_string();
+            app.refresh();
+        }
+        Err(e) => app.status = format!("sync failed: {e}"),
+    }
+}
+
+/// Runs a blocking closure on its own thread and resolves once it's done,
+/// so it can back an `iced::Task` without blocking the UI thread — used for
+/// `auth::authenticate()`, which blocks until the user finishes in their
+/// browser.
+fn run_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> impl std::future::Future<Output = T> {
+    let (tx, rx) = iced::futures::channel::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    async move { rx.await.expect("auth worker thread panicked") }
+}
+
+fn update(app: &mut App, message: Message) -> IcedTask<Message> {
     match message {
         Message::InputChanged(s) => app.input = s,
         Message::Submit => {
@@ -181,41 +298,56 @@ fn update(app: &mut App, message: Message) {
             app.refresh();
         }
         Message::SyncNow => {
-            if !caldav_core::auth::is_authenticated() {
-                app.status = "not connected \u{2014} run `caldavd --auth` in a terminal first".to_string();
+            if caldav_core::auth::is_authenticated() {
+                do_sync(app);
             } else {
-                match caldav_core::sync::run(&app.db) {
-                    Ok(()) => {
-                        app.status = "sync complete".to_string();
-                        app.refresh();
-                    }
-                    Err(e) => app.status = format!("sync failed: {e}"),
-                }
+                app.status = "opening your browser to connect Google\u{2026}".to_string();
+                return IcedTask::perform(run_blocking(|| caldav_core::auth::authenticate().map_err(|e| e.to_string())), Message::AuthComplete);
             }
         }
+        Message::AuthComplete(result) => match result {
+            Ok(()) => do_sync(app),
+            Err(e) => app.status = format!("Google sign-in failed: {e}"),
+        },
         Message::SwitchView(v) => app.view = v,
         Message::EventTitleChanged(s) => app.event_title = s,
-        Message::EventStartChanged(s) => app.event_start = s,
-        Message::EventEndChanged(s) => app.event_end = s,
+        Message::EventDateChanged(s) => app.event_date = s,
+        Message::EventTimeChanged(s) => app.event_time = s,
+        Message::EventDurationChanged(d) => app.event_duration = d,
         Message::SubmitEvent => {
             let title = app.event_title.trim().to_string();
             if title.is_empty() {
                 app.status = "event needs a title".to_string();
-                return;
+                return IcedTask::none();
             }
-            match (parse_datetime(&app.event_start), parse_datetime(&app.event_end)) {
-                (Some(start_at), Some(end_at)) if end_at <= start_at => {
-                    app.status = "event end must be after start".to_string();
+            let today = Local::now().date_naive();
+            let Some(date) = parse_event_date(&app.event_date, today) else {
+                app.status = "couldn't understand that date \u{2014} try \u{201c}today\u{201d}, \u{201c}tomorrow\u{201d}, or YYYY-MM-DD".to_string();
+                return IcedTask::none();
+            };
+            let range = if app.event_duration == DurationPreset::AllDay {
+                to_epoch(date, NaiveTime::MIN).zip(to_epoch(date + Duration::days(1), NaiveTime::MIN))
+            } else {
+                match parse_event_time(&app.event_time) {
+                    None => {
+                        app.status = "couldn't understand that time \u{2014} try \u{201c}3:00 PM\u{201d} or \u{201c}15:00\u{201d}".to_string();
+                        return IcedTask::none();
+                    }
+                    Some(time) => to_epoch(date, time)
+                        .map(|start_at| (start_at, start_at + app.event_duration.minutes().expect("checked above") * 60)),
                 }
-                (Some(start_at), Some(end_at)) => {
+            };
+            match range {
+                None => app.status = "that date/time doesn't exist locally (daylight saving change?)".to_string(),
+                Some((start_at, end_at)) => {
                     let _ = app.db.create_event(&title, start_at, end_at);
                     app.event_title.clear();
-                    app.event_start.clear();
-                    app.event_end.clear();
+                    app.event_date = "Today".to_string();
+                    app.event_time = default_time_str();
+                    app.event_duration = DurationPreset::default();
                     app.status = "event added".to_string();
                     app.refresh();
                 }
-                _ => app.status = "couldn't parse event start/end time".to_string(),
             }
         }
         Message::DeleteEvent(id) => {
@@ -230,16 +362,14 @@ fn update(app: &mut App, message: Message) {
         Message::SelectDay(day) => {
             app.cal_cursor = day;
             app.cal_scale = calendar::CalendarScale::Day;
-            let start = NaiveDateTime::new(day, NaiveTime::from_hms_opt(9, 0, 0).unwrap());
-            let end = NaiveDateTime::new(day, NaiveTime::from_hms_opt(10, 0, 0).unwrap());
-            app.event_start = start.format("%Y-%m-%d %H:%M").to_string();
-            app.event_end = end.format("%Y-%m-%d %H:%M").to_string();
+            app.event_date = day.format("%Y-%m-%d").to_string();
         }
         Message::OpenSite => {
             // fire-and-forget; if xdg-open is missing there's simply no browser.
             let _ = std::process::Command::new("xdg-open").arg(SITE_URL).spawn();
         }
     }
+    IcedTask::none()
 }
 
 fn sidebar(app: &App) -> Element<'_, Message> {
@@ -516,29 +646,62 @@ fn event_row<'a>(app: &'a App, event: &'a Event) -> Element<'a, Message> {
 }
 
 fn event_composer(app: &App) -> Element<'_, Message> {
-    let input_row = row![
-        text_input("Event title", &app.event_title)
-            .on_input(Message::EventTitleChanged)
-            .style(theme::input)
-            .padding(theme::SM)
-            .width(Length::Fill),
-        text_input("Start: YYYY-MM-DD HH:MM", &app.event_start)
-            .on_input(Message::EventStartChanged)
-            .style(theme::input)
-            .padding(theme::SM)
-            .width(Length::Fixed(190.0)),
-        text_input("End: YYYY-MM-DD HH:MM", &app.event_end)
-            .on_input(Message::EventEndChanged)
-            .on_submit(Message::SubmitEvent)
-            .style(theme::input)
-            .padding(theme::SM)
-            .width(Length::Fixed(190.0)),
-        add_button("Add", Message::SubmitEvent),
-    ]
-    .spacing(theme::SM)
-    .align_y(Alignment::Center);
+    let today = Local::now().date_naive();
+    let date_valid = parse_event_date(&app.event_date, today).is_some();
+    let time_valid = app.event_duration == DurationPreset::AllDay || parse_event_time(&app.event_time).is_some();
 
-    container(input_row).padding(theme::SM).width(Length::Fill).into()
+    let title_input = text_input("Event title", &app.event_title)
+        .on_input(Message::EventTitleChanged)
+        .on_submit(Message::SubmitEvent)
+        .style(theme::input)
+        .padding(theme::SM)
+        .width(Length::Fill);
+
+    let date_input = text_input("Today", &app.event_date)
+        .on_input(Message::EventDateChanged)
+        .on_submit(Message::SubmitEvent)
+        .style(if date_valid { theme::input } else { theme::input_invalid })
+        .padding(theme::SM)
+        .width(Length::Fixed(130.0));
+
+    let time_input = text_input("e.g. 3:00 PM", &app.event_time)
+        .on_input(Message::EventTimeChanged)
+        .on_submit(Message::SubmitEvent)
+        .style(if time_valid { theme::input } else { theme::input_invalid })
+        .padding(theme::SM)
+        .width(Length::Fixed(130.0));
+
+    let mut duration_row = row![].spacing(theme::XXS);
+    for preset in DurationPreset::ALL {
+        duration_row = duration_row.push(
+            button(text(preset.label()).size(theme::SIZE_META))
+                .style(theme::segment(app.event_duration == preset))
+                .padding([theme::XS, theme::SM])
+                .on_press(Message::EventDurationChanged(preset)),
+        );
+    }
+
+    let fields_row = row![date_input, time_input, duration_row, add_button("Add", Message::SubmitEvent)]
+        .spacing(theme::SM)
+        .align_y(Alignment::Center);
+
+    let hint = if app.event_duration == DurationPreset::AllDay {
+        "Date can be \u{201c}today\u{201d}, \u{201c}tomorrow\u{201d}, or YYYY-MM-DD \u{2014} all-day events skip the time."
+    } else {
+        "Date can be \u{201c}today\u{201d}, \u{201c}tomorrow\u{201d}, or YYYY-MM-DD; time can be \u{201c}3pm\u{201d} or \u{201c}15:00\u{201d}."
+    };
+
+    container(
+        column![
+            title_input,
+            fields_row,
+            text(hint).size(theme::SIZE_CAPTION).style(theme::muted_text),
+        ]
+        .spacing(theme::SM),
+    )
+    .padding(theme::SM)
+    .width(Length::Fill)
+    .into()
 }
 
 fn events_view(app: &App) -> Element<'_, Message> {

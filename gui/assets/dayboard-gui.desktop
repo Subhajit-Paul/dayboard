@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Dayboard
+GenericName=Calendar
+Comment=Local-first calendar, tasks & reminders, with optional Google sync
+Exec=dayboard-gui
+Icon=dayboard-gui
+Terminal=false
+Categories=Office;Calendar;
+StartupWMClass=dayboard-gui
